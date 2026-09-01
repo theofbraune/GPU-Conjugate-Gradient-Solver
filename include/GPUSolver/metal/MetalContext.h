@@ -2,6 +2,13 @@
 
 #include <cstddef>
 
+namespace MTL{
+
+  class Device;
+  class CommandQueue;
+  class Library;
+}
+
 namespace gpuSolver{
 
 class MetalContext{
@@ -12,7 +19,10 @@ class MetalContext{
     MetalContext(const MetalContext&) = delete;
     MetalContext& operator=(const MetalContext&) = delete;
 
-    void timesTwo(float* values, std::size_t size);
+    MTL::Device* device() const;
+    MTL::CommandQueue* queue() const;
+    MTL::Library* library() const;
+
   private:
     struct Impl;
     Impl* impl_;

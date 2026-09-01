@@ -78,6 +78,8 @@ if(APPLE)
         PRIVATE
             src/metal/MetalContext.cc
             src/metal/MetalImplementation.cc
+            src/metal/MetalBackend.cc
+            src/DeviceVector.cc
     )
 
     target_link_libraries(gpuSolver
@@ -109,6 +111,11 @@ if(APPLE)
     set(GPUSOLVER_METAL_LIBRARY
         "${GPUSOLVER_METAL_OUTPUT_DIR}/vector.metallib"
     )
+
+    file(MAKE_DIRECTORY
+        "${GPUSOLVER_METAL_OUTPUT_DIR}"
+    )
+
 
     add_custom_command(
         OUTPUT

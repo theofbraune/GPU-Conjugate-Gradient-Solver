@@ -31,9 +31,9 @@ struct MetalContext::Impl {
 
   MTL::Library *library = nullptr;
 
-  MTL::Function *timesTwoFunction = nullptr;
-
-  MTL::ComputePipelineState *timesTwoPipeline = nullptr;
+  // MTL::Function *timesTwoFunction = nullptr;
+  //
+  // MTL::ComputePipelineState *timesTwoPipeline = nullptr;
 
   // MTL::CommandBuffer* commandBuffer = nullptr;
 
@@ -70,28 +70,21 @@ MetalContext::MetalContext() : impl_(new Impl) {
     throw std::runtime_error(message);
   }
 
-  impl_->timesTwoFunction = impl_->library->newFunction(
-      NS::String::string("timesTwo", NS::UTF8StringEncoding));
-
-  if (!impl_->timesTwoFunction) {
-    throw std::runtime_error("Could not find the twimes two implementation");
-  }
-
-  impl_->timesTwoPipeline =
-      impl_->device->newComputePipelineState(impl_->timesTwoFunction, &error);
-
-  if (!impl_->timesTwoPipeline)
-    throw std::runtime_error("Could not create timesTwo compute pipeline.");
+  // impl_->timesTwoFunction = impl_->library->newFunction(
+  //     NS::String::string("timesTwo", NS::UTF8StringEncoding));
+  //
+  // if (!impl_->timesTwoFunction) {
+  //   throw std::runtime_error("Could not find the twimes two implementation");
+  // }
+  //
+  // impl_->timesTwoPipeline =
+  //     impl_->device->newComputePipelineState(impl_->timesTwoFunction, &error);
+  //
+  // if (!impl_->timesTwoPipeline)
+  //   throw std::runtime_error("Could not create timesTwo compute pipeline.");
 }
 
 MetalContext::~MetalContext() {
-  if(impl_->timesTwoPipeline){
-    impl_->timesTwoPipeline->release();
-  }
-
-  if(impl_->timesTwoFunction){
-    impl_->timesTwoFunction->release();
-  }
 
   if(impl_->library){
     impl_->library->release();
@@ -110,47 +103,59 @@ MetalContext::~MetalContext() {
 }
 
 
-void MetalContext::timesTwo(float* values, std::size_t size){
+// void MetalContext::timesTwo(float* values, std::size_t size){
+//
+//   const std::size_t bytes = size * sizeof(float);
+//
+//   MTL::Buffer *buffer = this->impl_->device->newBuffer(values, bytes, MTL::ResourceStorageModeShared);
+//
+//
+//   MTL::CommandBuffer* commandBuffer = impl_->commandQueue->commandBuffer();
+//
+//   MTL::ComputeCommandEncoder* encoder = commandBuffer->computeCommandEncoder();
+//
+//   // encoder->setComputePipelineState(impl_->timesTwoPipeline);
+//
+//   encoder->setBuffer(buffer,0,0);
+//
+//   MTL::Size gridSize = MTL::Size(size,1,1);
+//
+//   NS::UInteger groupSize = impl_->timesTwoPipeline->maxTotalThreadsPerThreadgroup();
+//
+//   // make sure that the grid has actually the right size here
+//   if(groupSize>size){
+//     groupSize = size;
+//   }
+//
+//   MTL::Size threadsPerGroup = MTL::Size(groupSize,1,1);
+//
+//   encoder->dispatchThreads(gridSize,threadsPerGroup);
+//
+//   commandBuffer->commit();
+//
+//   commandBuffer->waitUntilCompleted();
+//
+//   float* result = static_cast<float*>(buffer->contents());
+//
+//   for(std::size_t i=0; i<size; i++){
+//     values[i] = result[i];
+//   }
+//
+//   buffer->release();
+//
+//
+// }
 
-  const std::size_t bytes = size * sizeof(float);
+MTL::Device* MetalContext::device() const{
+  return impl_->device;
+}
 
-  MTL::Buffer *buffer = this->impl_->device->newBuffer(values, bytes, MTL::ResourceStorageModeShared);
+MTL::CommandQueue* MetalContext::queue() const{
+  return impl_->commandQueue;
+}
 
-
-  MTL::CommandBuffer* commandBuffer = impl_->commandQueue->commandBuffer();
-
-  MTL::ComputeCommandEncoder* encoder = commandBuffer->computeCommandEncoder();
-
-  encoder->setComputePipelineState(impl_->timesTwoPipeline);
-
-  encoder->setBuffer(buffer,0,0);
-
-  MTL::Size gridSize = MTL::Size(size,1,1);
-
-  NS::UInteger groupSize = impl_->timesTwoPipeline->maxTotalThreadsPerThreadgroup();
-
-  // make sure that the grid has actually the right size here
-  if(groupSize>size){
-    groupSize = size;
-  }
-
-  MTL::Size threadsPerGroup = MTL::Size(groupSize,1,1);
-
-  encoder->dispatchThreads(gridSize,threadsPerGroup);
-
-  commandBuffer->commit();
-
-  commandBuffer->waitUntilCompleted();
-
-  float* result = static_cast<float*>(buffer->contents());
-
-  for(std::size_t i=0; i<size; i++){
-    values[i] = result[i];
-  }
-
-  buffer->release();
-
-  
+MTL::Library* MetalContext::library() const{
+  return impl_->library;
 }
 
 } // namespace gpusolver
