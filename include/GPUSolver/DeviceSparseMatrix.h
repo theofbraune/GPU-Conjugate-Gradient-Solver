@@ -1,4 +1,5 @@
 #pragma once
+#include "HostSparseMatrix.h"
 
 #include <cstddef>
 
@@ -17,6 +18,8 @@ public:
   DeviceCSRMatrix(MetalContext &context, std::size_t nRows, std::size_t nCols,
                   std::size_t nnz, const int *rowPtr, const int *colIdxPtr,
                   const float *valPtr);
+
+  DeviceCSRMatrix(MetalContext & context, const HostCSRMatrix& hostSparseMatrix );
 
   ~DeviceCSRMatrix();
 

@@ -80,6 +80,10 @@ if(APPLE)
             src/metal/MetalBackend.cc
             src/DeviceVector.cc
             src/DeviceSparseMatrix.cc
+            src/HostSparseMatrix.cc 
+            src/Permutation.cc 
+            src/ReorderingStrategies/IdentityReordering.cc
+            src/ReorderingStrategies/RCMReordering.cc
     )
 
     target_link_libraries(gpuSolver

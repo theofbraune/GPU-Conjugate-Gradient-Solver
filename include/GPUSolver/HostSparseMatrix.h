@@ -9,23 +9,31 @@ class Permutation;
 class HostCSRMatrix {
 
 private:
-  const Permutation *permutation_;
+  Permutation *permutation_;
 
   std::size_t nRows_;
   std::size_t nCols_;
   std::size_t nnz_;
 
-  int* rowPtr_;
-  int* colPtr_;
-  float* valPtr_;
+  int *rowPtr_;
+  int *colPtr_;
+  float *valPtr_;
 
-  int* activeRowPtr_;
-  int* activeColPtr_;
-  float* activeValPtr_;
+  int *activeRowPtr_;
+  int *activeColPtr_;
+  float *activeValPtr_;
+
+  // permuted CSR, also owned by this object
+  int* permutedRowPtr_;
+  int* permutedColPtr_;
+  float* permutedValPtr_;
 
 public:
   HostCSRMatrix(std::size_t nRows, std::size_t nCols, std::size_t nnz,
                 int *rowPtr, int *colIdxPtr, float *valPtr);
+
+  HostCSRMatrix(std::size_t nRows, std::size_t nCols, std::size_t nnz,
+                int *rowPtr, int *colIdxPtr, float *valPtr, const Permutation& permutation);
 
   ~HostCSRMatrix();
 
@@ -42,17 +50,13 @@ public:
 
   void applyPermutation(const Permutation &permutation);
 
-  bool isPermuted = false;
+  bool isPermuted() const;
 
-  const int *activeRowPtr();
-  const int *activeColPtr();
-  const float *activeValPtr();
+  const int *activeRowPtr() const;
+  const int *activeColPtr() const;
+  const float *activeValPtr() const;
 
-  const Permutation* permutation();
-
-
-
-
+  const Permutation *permutation() const;
 };
 
 } // namespace gpuSolver

@@ -73,6 +73,20 @@ DeviceCSRMatrix::DeviceCSRMatrix(MetalContext &context, std::size_t nRows,
   }
 }
 
+DeviceCSRMatrix::DeviceCSRMatrix(
+    MetalContext& context,
+    const HostCSRMatrix& matrix)
+    : DeviceCSRMatrix(
+          context,
+          matrix.rows(),
+          matrix.cols(),
+          matrix.nnz(),
+          matrix.activeRowPtr(),
+          matrix.activeColPtr(),
+          matrix.activeValPtr())
+{
+}
+
 DeviceCSRMatrix::~DeviceCSRMatrix() {
 
   if (impl_->rowPtrBuffer) {

@@ -3,6 +3,11 @@
 #include <GPUSolver/metal/MetalBackend.h>
 #include <GPUSolver/metal/MetalContext.h>
 
+#include <GPUSolver/HostSparseMatrix.h>
+#include <GPUSolver/Permutation.h>
+#include <GPUSolver/ReorderingStrategies/IdentityReordering.h>
+#include <GPUSolver/ReorderingStrategies/RCMReordering.h>
+
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 
@@ -22,40 +27,7 @@
 
 using Clock = std::chrono::high_resolution_clock;
 
-// ------------------------------------------------------------
-// Convert an Eigen sparse matrix to row-major CSR.
-// ------------------------------------------------------------
-
-struct HostCSRMatrix {
-  std::size_t rows;
-  std::size_t cols;
-
-  std::vector<int> rowPtr;
-  std::vector<int> colIdx;
-  std::vector<float> values;
-};
-
-HostCSRMatrix makeCSR(const Eigen::SparseMatrix<float, Eigen::RowMajor> &A) {
-  HostCSRMatrix csr;
-
-  csr.rows = static_cast<std::size_t>(A.rows());
-  csr.cols = static_cast<std::size_t>(A.cols());
-
-  csr.rowPtr.resize(csr.rows + 1);
-  csr.colIdx.resize(static_cast<std::size_t>(A.nonZeros()));
-  csr.values.resize(static_cast<std::size_t>(A.nonZeros()));
-
-  for (std::size_t i = 0; i < csr.rowPtr.size(); ++i) {
-    csr.rowPtr[i] = A.outerIndexPtr()[i];
-  }
-
-  for (std::size_t i = 0; i < csr.colIdx.size(); ++i) {
-    csr.colIdx[i] = A.innerIndexPtr()[i];
-    csr.values[i] = A.valuePtr()[i];
-  }
-
-  return csr;
-}
+using gpuSolver::HostCSRMatrix;
 
 // ------------------------------------------------------------
 // Simple multithreaded CPU CSR SpMV.
@@ -63,10 +35,16 @@ HostCSRMatrix makeCSR(const Eigen::SparseMatrix<float, Eigen::RowMajor> &A) {
 
 void cpuParallelSpMV(const HostCSRMatrix &A, const std::vector<float> &x,
                      std::vector<float> &y, std::size_t numberOfThreads) {
-  const std::size_t numberOfRows = A.rows;
+  const std::size_t numberOfRows = A.rows();
 
   const std::size_t rowsPerThread =
       (numberOfRows + numberOfThreads - 1) / numberOfThreads;
+
+  const int *rowPtrA = A.activeRowPtr();
+
+  const int *colPtrA = A.activeColPtr();
+
+  const float *valPtrA = A.activeValPtr();
 
   std::vector<std::thread> threads;
   threads.reserve(numberOfThreads);
@@ -81,21 +59,22 @@ void cpuParallelSpMV(const HostCSRMatrix &A, const std::vector<float> &x,
       break;
     }
 
-    threads.emplace_back([&A, &x, &y, firstRow, lastRow]() {
-      for (std::size_t row = firstRow; row < lastRow; ++row) {
-        float sum = 0.0f;
+    threads.emplace_back(
+        [&x, &y, rowPtrA, colPtrA, valPtrA, firstRow, lastRow]() {
+          for (std::size_t row = firstRow; row < lastRow; ++row) {
+            float sum = 0.0f;
 
-        const int firstEntry = A.rowPtr[row];
+            const int firstEntry = rowPtrA[row];
 
-        const int lastEntry = A.rowPtr[row + 1];
+            const int lastEntry = rowPtrA[row + 1];
 
-        for (int k = firstEntry; k < lastEntry; ++k) {
-          sum += A.values[k] * x[A.colIdx[k]];
-        }
+            for (int k = firstEntry; k < lastEntry; ++k) {
+              sum += valPtrA[k] * x[colPtrA[k]];
+            }
 
-        y[row] = sum;
-      }
-    });
+            y[row] = sum;
+          }
+        });
   }
 
   for (std::thread &thread : threads) {
@@ -111,10 +90,21 @@ double elapsedMilliseconds(const Clock::time_point &start,
 }
 
 // ------------------------------------------------------------
+// Give the CPU/GPU a short idle period between benchmark phases.
+// This reduces carry-over from the previous benchmark (temperature,
+// power state, memory pressure), but does not replace repeated trials.
+// ------------------------------------------------------------
+
+void coolDown(std::chrono::milliseconds duration) {
+  std::this_thread::sleep_for(duration);
+}
+
+// ------------------------------------------------------------
 
 int main(int argc, char *argv[]) {
   constexpr int repetitions = 100;
   constexpr int warmupIterations = 5;
+  constexpr std::chrono::milliseconds cooldownDuration(1000);
 
   // --------------------------------------------------------
   // 1. Build/load your tet mesh Laplacian here.
@@ -154,6 +144,7 @@ int main(int argc, char *argv[]) {
   igl::cotmatrix(V, F, ACM);
 
   A = ACM.eval();
+  A.makeCompressed();
 
   if (A.rows() == 0) {
     throw std::runtime_error("Benchmark matrix has not been initialized.");
@@ -162,30 +153,86 @@ int main(int argc, char *argv[]) {
   // 2. Convert once to CSR.
   // --------------------------------------------------------
 
-  HostCSRMatrix csr = makeCSR(A);
+  // HostCSRMatrix csr = makeCSR(A);
+  const std::size_t nRows = static_cast<std::size_t>(A.rows());
+
+  const std::size_t nCols = static_cast<std::size_t>(A.cols());
+
+  const std::size_t nnz = static_cast<std::size_t>(A.nonZeros());
+
+  int *rowPtrA = A.outerIndexPtr();
+
+  int *colPtrA = A.innerIndexPtr();
+
+  float *valPtrA = A.valuePtr();
+  std::cout << "Matrix statistics\n"
+            << "-----------------\n"
+            << "Rows:       " << nRows << '\n'
+            << "Cols:       " << nCols << '\n'
+            << "NNZ:        " << nnz << '\n'
+            << "NNZ / row:  "
+            << static_cast<double>(nnz) / static_cast<double>(nRows) << "\n\n";
+
+  // --------------------------------------------------------
+  // Build permutation.
+  //
+  // --------------------------------------------------------
+
+  int *oldToNew = new int[nRows];
+
+  int *newToOld = new int[nRows];
+
+  // gpuSolver::IdentityReordering identityReordering;
+  gpuSolver::RCMReordering rcmReordering;
+
+  // identityReordering.compute(nRows, rowPtrA, colPtrA, oldToNew, newToOld);
+  rcmReordering.compute(nRows, rowPtrA, colPtrA, oldToNew, newToOld);
+
+  gpuSolver::Permutation permutation(nRows, oldToNew, newToOld);
+
+  delete[] oldToNew;
+  delete[] newToOld;
+
+  // --------------------------------------------------------
+  // HostCSRMatrix copies both the original CSR data and the
+  // permutation. Its active CSR representation is therefore
+  // the permuted one.
+  //
+  // For the identity permutation, this must be equivalent to A.
+  // --------------------------------------------------------
+
+  gpuSolver::HostCSRMatrix csr(nRows, nCols, nnz, rowPtrA, colPtrA, valPtrA,
+                               permutation);
 
   std::cout << "Matrix statistics\n"
             << "-----------------\n"
-            << "Rows:       " << csr.rows << '\n'
-            << "Cols:       " << csr.cols << '\n'
-            << "NNZ:        " << csr.values.size() << '\n'
+            << "Rows:       " << csr.rows() << '\n'
+            << "Cols:       " << csr.cols() << '\n'
+            << "NNZ:        " << csr.nnz() << '\n'
             << "NNZ / row:  "
-            << static_cast<double>(csr.values.size()) /
-                   static_cast<double>(csr.rows)
+            << static_cast<double>(csr.nnz()) / static_cast<double>(csr.rows())
             << "\n\n";
 
   // --------------------------------------------------------
   // 3. Construct deterministic input vector.
   // --------------------------------------------------------
 
-  std::vector<float> x(csr.cols);
+  std::vector<float> x(csr.cols());
 
   for (std::size_t i = 0; i < x.size(); ++i) {
     const float index = static_cast<float>(i);
 
     x[i] = std::sin(0.001f * index) + 0.1f * std::cos(0.013f * index);
   }
+  std::vector<float> xPermuted(nCols);
 
+  const int *oldToNewPtr = permutation.oldToNew();
+
+  for (std::size_t oldIndex = 0; oldIndex < nCols; ++oldIndex) {
+    const int newIndex = oldToNewPtr[oldIndex];
+
+    xPermuted[newIndex] = x[oldIndex];
+  }
   // --------------------------------------------------------
   // 4. Eigen reference vectors.
   // --------------------------------------------------------
@@ -198,6 +245,8 @@ int main(int argc, char *argv[]) {
   // --------------------------------------------------------
   // Warm up Eigen.
   // --------------------------------------------------------
+
+  coolDown(cooldownDuration);
 
   for (int iteration = 0; iteration < warmupIterations; ++iteration) {
     eigenY.noalias() = A * eigenX;
@@ -218,10 +267,36 @@ int main(int argc, char *argv[]) {
   const double eigenMilliseconds = elapsedMilliseconds(eigenStart, eigenEnd);
 
   // --------------------------------------------------------
-  // 5. CPU multithreaded implementation.
+  // The reordered matrix computes
+  //
+  //   y' = (P A P^T) (P x) = P (A x).
+  //
+  // Therefore CPU and Metal results are in the permuted ordering.
+  // Build the matching reference y' = P y once.
   // --------------------------------------------------------
 
-  std::vector<float> cpuY(csr.rows, 0.0f);
+  std::vector<float> eigenYPermuted(nRows);
+
+  for (std::size_t oldIndex = 0; oldIndex < nRows; ++oldIndex) {
+    const int newIndex = oldToNewPtr[oldIndex];
+
+    eigenYPermuted[newIndex] =
+        eigenY[static_cast<Eigen::Index>(oldIndex)];
+  }
+
+  // --------------------------------------------------------
+  // 5. CPU multithreaded implementation.
+  //
+  // cpuParallelSpMV should use:
+  //     A.activeRowPtr()
+  //     A.activeColPtr()
+  //     A.activeValPtr()
+  //
+  // Thus it uses exactly the same reordered representation
+  // that will later be uploaded to Metal.
+  // --------------------------------------------------------
+
+  std::vector<float> cpuY(csr.rows(), 0.0f);
 
   std::size_t numberOfThreads = std::thread::hardware_concurrency();
 
@@ -231,14 +306,16 @@ int main(int argc, char *argv[]) {
 
   std::cout << "CPU threads: " << numberOfThreads << "\n\n";
 
+  coolDown(cooldownDuration);
+
   for (int iteration = 0; iteration < warmupIterations; ++iteration) {
-    cpuParallelSpMV(csr, x, cpuY, numberOfThreads);
+    cpuParallelSpMV(csr, xPermuted, cpuY, numberOfThreads);
   }
 
   Clock::time_point cpuStart = Clock::now();
 
   for (int iteration = 0; iteration < repetitions; ++iteration) {
-    cpuParallelSpMV(csr, x, cpuY, numberOfThreads);
+    cpuParallelSpMV(csr, xPermuted, cpuY, numberOfThreads);
   }
 
   Clock::time_point cpuEnd = Clock::now();
@@ -247,30 +324,32 @@ int main(int argc, char *argv[]) {
 
   // --------------------------------------------------------
   // 6. Metal setup.
-  //    IMPORTANT: all allocation/upload happens BEFORE timing.
+  //
+  // DeviceCSRMatrix only receives the active CSR representation.
+  // It knows nothing about permutations.
   // --------------------------------------------------------
 
   gpuSolver::MetalContext context;
   gpuSolver::MetalBackend backend(context);
 
-  gpuSolver::DeviceCSRMatrix deviceA(context, csr.rows, csr.cols,
-                                     csr.values.size(), csr.rowPtr.data(),
-                                     csr.colIdx.data(), csr.values.data());
+  gpuSolver::DeviceCSRMatrix deviceA(context, csr);
 
-  gpuSolver::DeviceVector deviceX(context, x);
+  gpuSolver::DeviceVector deviceX(context, xPermuted);
 
-  gpuSolver::DeviceVector deviceY(context, csr.rows);
+  gpuSolver::DeviceVector deviceY(context, csr.rows());
 
   // --------------------------------------------------------
   // Warm up Metal.
   // --------------------------------------------------------
+
+  coolDown(cooldownDuration);
 
   for (int iteration = 0; iteration < warmupIterations; ++iteration) {
     backend.spmv(deviceA, deviceX, deviceY);
   }
 
   // --------------------------------------------------------
-  // Benchmark Metal.
+  // Benchmark synchronized Metal SpMV.
   // --------------------------------------------------------
 
   Clock::time_point metalStart = Clock::now();
@@ -283,17 +362,26 @@ int main(int argc, char *argv[]) {
 
   const double metalMilliseconds = elapsedMilliseconds(metalStart, metalEnd);
 
-  Clock::time_point metalSyncStart = Clock::now();
+  // --------------------------------------------------------
+  // Benchmark repeated Metal SpMV with one synchronization.
+  // --------------------------------------------------------
+
+  coolDown(cooldownDuration);
+
+  // Warm up the batched command-buffer path independently.
+  backend.spmvRepeated(deviceA, deviceX, deviceY, warmupIterations);
+
+  Clock::time_point metalBatchStart = Clock::now();
 
   backend.spmvRepeated(deviceA, deviceX, deviceY, repetitions);
-  Clock::time_point metalSyncEnd = Clock::now();
 
-  const double metalSyncMilliseconds =
-      elapsedMilliseconds(metalSyncStart, metalSyncEnd);
+  Clock::time_point metalBatchEnd = Clock::now();
+
+  const double metalBatchMilliseconds =
+      elapsedMilliseconds(metalBatchStart, metalBatchEnd);
 
   // --------------------------------------------------------
   // 7. Correctness check.
-  //    Download only AFTER timing.
   // --------------------------------------------------------
 
   float *metalY = deviceY.download();
@@ -301,8 +389,8 @@ int main(int argc, char *argv[]) {
   float maxMetalError = 0.0f;
   float maxCpuError = 0.0f;
 
-  for (std::size_t i = 0; i < csr.rows; ++i) {
-    const float reference = eigenY[static_cast<Eigen::Index>(i)];
+  for (std::size_t i = 0; i < csr.rows(); ++i) {
+    const float reference = eigenYPermuted[i];
 
     const float metalError = std::abs(metalY[i] - reference);
 
@@ -329,26 +417,26 @@ int main(int argc, char *argv[]) {
   std::cout << "Timing over " << repetitions << " SpMVs\n"
             << "---------------------------\n";
 
-  std::cout << "Eigen total:       " << eigenMilliseconds << " ms\n";
+  std::cout << "Eigen total:              " << eigenMilliseconds << " ms\n";
 
-  std::cout << "Eigen / SpMV:      " << eigenMilliseconds / repetitions
+  std::cout << "Eigen / SpMV:             " << eigenMilliseconds / repetitions
             << " ms\n\n";
 
-  std::cout << "CPU MT total:      " << cpuMilliseconds << " ms\n";
+  std::cout << "CPU MT total:             " << cpuMilliseconds << " ms\n";
 
-  std::cout << "CPU MT / SpMV:     " << cpuMilliseconds / repetitions
+  std::cout << "CPU MT / SpMV:            " << cpuMilliseconds / repetitions
             << " ms\n\n";
 
-  std::cout << "Metal total:       " << metalMilliseconds << " ms\n";
+  std::cout << "Metal synchronized total: " << metalMilliseconds << " ms\n";
 
-  std::cout << "Metal / SpMV:      " << metalMilliseconds / repetitions
+  std::cout << "Metal synchronized / SpMV:" << metalMilliseconds / repetitions
             << " ms\n\n";
 
+  std::cout << "Metal batched total:      " << metalBatchMilliseconds
+            << " ms\n";
 
-  std::cout << "Metal total without sync:       " << metalSyncMilliseconds << " ms\n";
-
-  std::cout << "MetalSync / SpMV:      " << metalSyncMilliseconds/ repetitions
-            << " ms\n\n";
+  std::cout << "Metal batched / SpMV:     "
+            << metalBatchMilliseconds / repetitions << " ms\n\n";
 
   std::cout << "Metal speedup vs Eigen:   "
             << eigenMilliseconds / metalMilliseconds << "x\n";
@@ -356,8 +444,8 @@ int main(int argc, char *argv[]) {
   std::cout << "Metal speedup vs CPU MT:  "
             << cpuMilliseconds / metalMilliseconds << "x\n";
 
-  std::cout << "Metal without sync speedup vs CPU MT:  "
-            << cpuMilliseconds / metalSyncMilliseconds << "x\n";
-
-  return 0;
+  std::cout << "Metal batched speedup vs CPU MT: "
+            << cpuMilliseconds / metalBatchMilliseconds << "x\n";
 }
+
+
