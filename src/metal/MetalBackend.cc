@@ -16,16 +16,10 @@
 #include <Metal/MTLResource.hpp>
 #include <Metal/MTLTypes.hpp>
 
-
-
-
+#include <cstddef>
 #include <cstring>
 #include <iterator>
 #include <stdexcept>
-
-
-
-
 
 namespace gpuSolver {
 
@@ -34,6 +28,7 @@ struct MetalBackend::Impl {
   MetalContext &context;
   MTL::ComputePipelineState *scalePipeline = nullptr;
   MTL::ComputePipelineState *axpyPipeline = nullptr;
+  MTL::ComputePipelineState *spmvPipeline = nullptr;
 
   explicit Impl(MetalContext &context_) : context(context_) {}
 };
@@ -101,6 +96,9 @@ MetalBackend::MetalBackend(MetalContext &context) {
 
   impl_->scalePipeline =
       makePipeline(context.device(), context.library(), "scale");
+
+  impl_->spmvPipeline =
+      makePipeline(context.device(), context.library(), "spmv");
 }
 
 MetalBackend::~MetalBackend() {
@@ -111,6 +109,10 @@ MetalBackend::~MetalBackend() {
 
   if (impl_->axpyPipeline) {
     impl_->axpyPipeline->release();
+  }
+
+  if (impl_->spmvPipeline) {
+    impl_->spmvPipeline->release();
   }
 
   delete impl_;
@@ -124,7 +126,8 @@ void MetalBackend::scale(DeviceVector &x, float scalar) {
 
   encoder->setComputePipelineState(impl_->scalePipeline);
 
-  MTL::Buffer *bufferForX = x.getBuffer();
+  MTL::Buffer *bufferForX = x.getNativeBuffer();
+  // MTL::Buffer *bufferForX = x.impl_->buffer;
 
   encoder->setBuffer(bufferForX, 0, 0);
 
@@ -135,7 +138,7 @@ void MetalBackend::scale(DeviceVector &x, float scalar) {
   dispatch1D(encoder, impl_->scalePipeline, sizeOfTheVector);
 
   encoder->endEncoding();
-  
+
   commandBuffer->commit();
   commandBuffer->waitUntilCompleted();
 }
@@ -148,15 +151,18 @@ void MetalBackend::axpy(float alpha, const DeviceVector &x, DeviceVector &y) {
 
   encoder->setComputePipelineState(impl_->axpyPipeline);
 
-  MTL::Buffer *bufferForX = x.getBuffer();
+  MTL::Buffer *bufferForX = x.getNativeBuffer();
+  MTL::Buffer *bufferForY = y.getNativeBuffer();
 
-  MTL::Buffer *bufferForY = y.getBuffer();
-  
+  // MTL::Buffer *bufferForX = x.impl_->buffer;
+  // MTL::Buffer *bufferForY = y.impl_->buffer;
+
   size_t sizeOfx = x.getSizeOfVector();
   size_t sizeOfy = y.getSizeOfVector();
-  
-  if(sizeOfx!=sizeOfy){
-    throw std::runtime_error(" the two vectorsd tat you are passing dont have the same size");
+
+  if (sizeOfx != sizeOfy) {
+    throw std::runtime_error(
+        " the two vectorsd tat you are passing dont have the same size");
   }
 
   encoder->setBuffer(bufferForX, 0, 0);
@@ -171,9 +177,140 @@ void MetalBackend::axpy(float alpha, const DeviceVector &x, DeviceVector &y) {
 
   commandBuffer->commit();
   commandBuffer->waitUntilCompleted();
-
-
-
 }
+
+void MetalBackend::spmv(const DeviceCSRMatrix &A, const DeviceVector &x,
+                        DeviceVector &Ax) {
+
+  if (A.cols() != x.getSizeOfVector()) {
+    throw std::runtime_error(
+        "MetalBackend::spmv: matrix columns do not match x size.");
+  }
+
+  if (A.rows() != Ax.getSizeOfVector()) {
+    throw std::runtime_error(
+        "MetalBackend::spmv: matrix rows do not match output size.");
+  }
+
+  if (A.rows() == 0) {
+    return;
+  }
+  
+  MTL::CommandBuffer *commandBuffer = impl_->context.queue()->commandBuffer();
+
+  MTL::ComputeCommandEncoder *encoder = commandBuffer->computeCommandEncoder();
+
+  encoder->setComputePipelineState(impl_->spmvPipeline);
+
+  MTL::Buffer *bufferRowPtr = A.getRowPtrBuffer();
+  MTL::Buffer *bufferColPtr = A.getColPtrBuffer();
+  MTL::Buffer *bufferValPtr = A.getValPtrBuffer();
+
+  MTL::Buffer *bufferXvals = x.getNativeBuffer();
+  MTL::Buffer *bufferAxVals = Ax.getNativeBuffer();
+  std::size_t nbOfRows = A.rows();
+
+  // todo sanity checks
+  //
+  // set the buffers on the encoder now. Check that they match the order of the
+  // kernel buffers
+  encoder->setBuffer(bufferRowPtr, 0, 0);
+
+  encoder->setBuffer(bufferColPtr, 0, 1);
+
+  encoder->setBuffer(bufferValPtr, 0, 2);
+
+  encoder->setBuffer(bufferXvals, 0, 3);
+
+  encoder->setBuffer(bufferAxVals, 0, 4);
+
+  // encoder->setBytes(&nbOfRows, sizeof(int), 5);
+
+  dispatch1D(encoder, impl_->spmvPipeline, nbOfRows);
+
+  encoder->endEncoding();
+
+  commandBuffer->commit();
+
+  commandBuffer->waitUntilCompleted();
+}
+
+void MetalBackend::encodeSpmv(
+    MTL::ComputeCommandEncoder* encoder,
+    const DeviceCSRMatrix& A,
+    const DeviceVector& x,
+    DeviceVector& Ax)
+{
+    encoder->setComputePipelineState(
+        impl_->spmvPipeline
+    );
+
+    encoder->setBuffer(
+        A.getRowPtrBuffer(),
+        0,
+        0
+    );
+
+    encoder->setBuffer(
+        A.getColPtrBuffer(),
+        0,
+        1
+    );
+
+    encoder->setBuffer(
+        A.getValPtrBuffer(),
+        0,
+        2
+    );
+
+    encoder->setBuffer(
+        x.getNativeBuffer(),
+        0,
+        3
+    );
+
+    encoder->setBuffer(
+        Ax.getNativeBuffer(),
+        0,
+        4
+    );
+
+    dispatch1D(
+        encoder,
+        impl_->spmvPipeline,
+        A.rows()
+    );
+}
+
+void MetalBackend::spmvRepeated(
+    const DeviceCSRMatrix& A,
+    const DeviceVector& x,
+    DeviceVector& Ax,
+    std::size_t repetitions)
+{
+    MTL::CommandBuffer* commandBuffer =
+        impl_->context.queue()->commandBuffer();
+
+    MTL::ComputeCommandEncoder* encoder =
+        commandBuffer->computeCommandEncoder();
+
+    for (std::size_t iteration = 0;
+         iteration < repetitions;
+         ++iteration)
+    {
+        encodeSpmv(
+            encoder,
+            A,
+            x,
+            Ax
+        );
+    }
+
+    encoder->endEncoding();
+
+    commandBuffer->commit();
+    commandBuffer->waitUntilCompleted();
+}
+
 
 } // namespace gpuSolver

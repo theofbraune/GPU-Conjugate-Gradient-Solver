@@ -25,3 +25,21 @@ kernel void axpy(
 ){
   y[id] += alpha * x[id];
 }
+
+
+kernel void spmv(
+  device const int* rowPtr [[buffer(0)]],
+  device const int* colPtr [[buffer(1)]],
+  device const float* valPtr [[buffer(2)]],
+  device const float* x[[buffer(3)]],
+  device float* y[[buffer(4)]],
+  uint row[[thread_position_in_grid]]
+){
+
+  float sum = 0.0f;
+  for(int k = rowPtr[row]; k < rowPtr[row+1]; k++){
+    sum += valPtr[k] * x[colPtr[k]];
+  }
+
+  y[row] = sum;
+}

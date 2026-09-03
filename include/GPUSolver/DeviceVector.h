@@ -23,9 +23,9 @@ namespace gpuSolver {
       struct Impl;
       Impl* impl_;
 
-      MTL::Buffer* getBuffer();
+      MTL::Buffer* getNativeBuffer();
 
-      MTL::Buffer* getBuffer() const;
+      MTL::Buffer* getNativeBuffer() const;
 
       friend class MetalBackend;
 

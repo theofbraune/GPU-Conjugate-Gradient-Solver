@@ -52,7 +52,6 @@ endif()
 
 add_library(gpuSolver
     src/ConjugateGradient.cc
-    src/SparseMatrix.cc
 )
 
 add_library(gpuSolver::gpuSolver ALIAS gpuSolver)
@@ -80,6 +79,7 @@ if(APPLE)
             src/metal/MetalImplementation.cc
             src/metal/MetalBackend.cc
             src/DeviceVector.cc
+            src/DeviceSparseMatrix.cc
     )
 
     target_link_libraries(gpuSolver

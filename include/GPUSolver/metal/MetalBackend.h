@@ -1,40 +1,44 @@
 #pragma once
 
-
-#include <GPUSolver/metal/MetalContext.h>
+#include <GPUSolver/DeviceSparseMatrix.h>
 #include <GPUSolver/DeviceVector.h>
+#include <GPUSolver/metal/MetalContext.h>
 
+namespace MTL {
+class ComputeCommandEncoder;
+class ComputePipelineState;
+class Device;
+class Library;
+} // namespace MTL
 
-namespace MTL
-{
-    class ComputeCommandEncoder;
-    class ComputePipelineState;
-    class Device;
-    class Library;
-}
+namespace gpuSolver {
+class MetalBackend {
 
-namespace gpuSolver{
-class MetalBackend{
+private:
+  struct Impl;
+  Impl *impl_;
 
-  private:
-    struct Impl;
-    Impl* impl_;
- 
-    void dispatch1D(MTL::ComputeCommandEncoder* encoder, MTL::ComputePipelineState* pipeline, size_t n);
-    
-    MTL::ComputePipelineState* makePipeline(MTL::Device* device, MTL::Library* library, const char* name);
+  void dispatch1D(MTL::ComputeCommandEncoder *encoder,
+                  MTL::ComputePipelineState *pipeline, size_t n);
 
+  MTL::ComputePipelineState *
+  makePipeline(MTL::Device *device, MTL::Library *library, const char *name);
 
-  public:
-    explicit MetalBackend(MetalContext& context);
+  void encodeSpmv(MTL::ComputeCommandEncoder *encoder, const DeviceCSRMatrix &A,
+                  const DeviceVector &x, DeviceVector &Ax);
 
-    ~MetalBackend();
+public:
+  explicit MetalBackend(MetalContext &context);
 
-    void scale(DeviceVector& x, float scalar);
+  ~MetalBackend();
 
-    void axpy(float alpha, const DeviceVector& x, DeviceVector& y);
+  void scale(DeviceVector &x, float scalar);
 
+  void axpy(float alpha, const DeviceVector &x, DeviceVector &y);
 
+  void spmv(const DeviceCSRMatrix &A, const DeviceVector &x, DeviceVector &Ax);
 
+  void spmvRepeated(const DeviceCSRMatrix &A, const DeviceVector &x,
+                    DeviceVector &Ax, std::size_t repetitions);
 };
-}
+} // namespace gpuSolver

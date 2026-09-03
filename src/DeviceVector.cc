@@ -65,7 +65,7 @@ namespace gpuSolver {
 
   }
 
-  MTL::Buffer* DeviceVector::getBuffer(){
+  MTL::Buffer* DeviceVector::getNativeBuffer(){
     // check if the buffer is loaded 
     if(impl_->buffer==nullptr){
       throw std::runtime_error("The data in the buffer is not allocated! ");
@@ -73,7 +73,7 @@ namespace gpuSolver {
     return impl_->buffer;
 
   }
-  MTL::Buffer* DeviceVector::getBuffer() const{
+  MTL::Buffer* DeviceVector::getNativeBuffer() const{
     // check if the buffer is loaded 
     if(impl_->buffer==nullptr){
       throw std::runtime_error("The data in the buffer is not allocated! ");

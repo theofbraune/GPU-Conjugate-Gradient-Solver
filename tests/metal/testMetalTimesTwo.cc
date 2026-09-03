@@ -44,7 +44,7 @@ int main()
 
     std::cout << "x after scale:\n";
 
-    for (std::size_t i = 0; i <sizeXresult; ++i)
+    for (std::size_t i = 0; i < sizeXresult; ++i)
     {
         std::cout << xResult[i] << " ";
     }
@@ -53,7 +53,7 @@ int main()
 
     std::cout << "y after axpy:\n";
 
-    for (std::size_t i = 0; i < sizeXresult; ++i)
+    for (std::size_t i = 0; i <sizeXresult; ++i)
     {
         std::cout << yResult[i] << " ";
     }
