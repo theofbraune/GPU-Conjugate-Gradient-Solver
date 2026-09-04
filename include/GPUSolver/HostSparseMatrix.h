@@ -30,10 +30,10 @@ private:
 
 public:
   HostCSRMatrix(std::size_t nRows, std::size_t nCols, std::size_t nnz,
-                int *rowPtr, int *colIdxPtr, float *valPtr);
+                const int *rowPtr, const int *colIdxPtr, const float *valPtr);
 
   HostCSRMatrix(std::size_t nRows, std::size_t nCols, std::size_t nnz,
-                int *rowPtr, int *colIdxPtr, float *valPtr, const Permutation& permutation);
+                const int *rowPtr, const int *colIdxPtr, const float *valPtr, const Permutation& permutation);
 
   ~HostCSRMatrix();
 

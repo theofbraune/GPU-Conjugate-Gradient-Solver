@@ -29,6 +29,7 @@ struct MetalBackend::Impl {
   MTL::ComputePipelineState *scalePipeline = nullptr;
   MTL::ComputePipelineState *axpyPipeline = nullptr;
   MTL::ComputePipelineState *spmvPipeline = nullptr;
+  MTL::ComputePipelineState *spmvELLPipeline = nullptr;
 
   explicit Impl(MetalContext &context_) : context(context_) {}
 };
@@ -99,6 +100,9 @@ MetalBackend::MetalBackend(MetalContext &context) {
 
   impl_->spmvPipeline =
       makePipeline(context.device(), context.library(), "spmv");
+
+  impl_->spmvELLPipeline =
+      makePipeline(context.device(), context.library(), "spmvELL");
 }
 
 MetalBackend::~MetalBackend() {
@@ -113,6 +117,10 @@ MetalBackend::~MetalBackend() {
 
   if (impl_->spmvPipeline) {
     impl_->spmvPipeline->release();
+  }
+
+  if (impl_->spmvELLPipeline) {
+    impl_->spmvELLPipeline->release();
   }
 
   delete impl_;
@@ -195,7 +203,7 @@ void MetalBackend::spmv(const DeviceCSRMatrix &A, const DeviceVector &x,
   if (A.rows() == 0) {
     return;
   }
-  
+
   MTL::CommandBuffer *commandBuffer = impl_->context.queue()->commandBuffer();
 
   MTL::ComputeCommandEncoder *encoder = commandBuffer->computeCommandEncoder();
@@ -235,80 +243,150 @@ void MetalBackend::spmv(const DeviceCSRMatrix &A, const DeviceVector &x,
   commandBuffer->waitUntilCompleted();
 }
 
-void MetalBackend::encodeSpmv(
-    MTL::ComputeCommandEncoder* encoder,
-    const DeviceCSRMatrix& A,
-    const DeviceVector& x,
-    DeviceVector& Ax)
-{
-    encoder->setComputePipelineState(
-        impl_->spmvPipeline
-    );
+void MetalBackend::encodeSpmv(MTL::ComputeCommandEncoder *encoder,
+                              const DeviceCSRMatrix &A, const DeviceVector &x,
+                              DeviceVector &Ax) {
+  encoder->setComputePipelineState(impl_->spmvPipeline);
 
-    encoder->setBuffer(
-        A.getRowPtrBuffer(),
-        0,
-        0
-    );
+  encoder->setBuffer(A.getRowPtrBuffer(), 0, 0);
 
-    encoder->setBuffer(
-        A.getColPtrBuffer(),
-        0,
-        1
-    );
+  encoder->setBuffer(A.getColPtrBuffer(), 0, 1);
 
-    encoder->setBuffer(
-        A.getValPtrBuffer(),
-        0,
-        2
-    );
+  encoder->setBuffer(A.getValPtrBuffer(), 0, 2);
 
-    encoder->setBuffer(
-        x.getNativeBuffer(),
-        0,
-        3
-    );
+  encoder->setBuffer(x.getNativeBuffer(), 0, 3);
 
-    encoder->setBuffer(
-        Ax.getNativeBuffer(),
-        0,
-        4
-    );
+  encoder->setBuffer(Ax.getNativeBuffer(), 0, 4);
 
-    dispatch1D(
-        encoder,
-        impl_->spmvPipeline,
-        A.rows()
-    );
+  dispatch1D(encoder, impl_->spmvPipeline, A.rows());
 }
 
+void MetalBackend::encodeSpmvELL(MTL::ComputeCommandEncoder *encoder,
+                                 const DeviceELLMatrix &A,
+                                 const DeviceVector &x, DeviceVector &y) {
+  encoder->setComputePipelineState(impl_->spmvELLPipeline);
+
+  encoder->setBuffer(A.ellColIdxBuffer(), 0, 0);
+
+  encoder->setBuffer(A.ellValuesBuffer(), 0, 1);
+
+  encoder->setBuffer(A.overflowRowPtrBuffer(), 0, 2);
+
+  encoder->setBuffer(A.overflowColIdxBuffer(), 0, 3);
+
+  encoder->setBuffer(A.overflowValuesBuffer(), 0, 4);
+
+  encoder->setBuffer(x.getNativeBuffer(), 0, 5);
+
+  encoder->setBuffer(y.getNativeBuffer(), 0, 6);
+
+  const uint32_t nRows = static_cast<uint32_t>(A.rows());
+
+  const uint32_t ellWidth = static_cast<uint32_t>(A.ellWidth());
+
+  encoder->setBytes(&nRows, sizeof(uint32_t), 7);
+
+  encoder->setBytes(&ellWidth, sizeof(uint32_t), 8);
+
+  dispatch1D(encoder, impl_->spmvELLPipeline, A.rows());
+}
+
+void MetalBackend::spmvRepeated(const DeviceCSRMatrix &A, const DeviceVector &x,
+                                DeviceVector &Ax, std::size_t repetitions) {
+  MTL::CommandBuffer *commandBuffer = impl_->context.queue()->commandBuffer();
+
+  MTL::ComputeCommandEncoder *encoder = commandBuffer->computeCommandEncoder();
+
+  for (std::size_t iteration = 0; iteration < repetitions; ++iteration) {
+    encodeSpmv(encoder, A, x, Ax);
+  }
+
+  encoder->endEncoding();
+
+  commandBuffer->commit();
+  commandBuffer->waitUntilCompleted();
+}
+
+void MetalBackend::spmv(const DeviceELLMatrix &A, const DeviceVector &x,
+                        DeviceVector &y) {
+  if (A.cols() != x.size()) {
+    throw std::runtime_error("MetalBackend::spmv ELL: matrix and input vector "
+                             "dimensions do not match.");
+  }
+
+  if (A.rows() != y.size()) {
+    throw std::runtime_error("MetalBackend::spmv ELL: matrix and output vector "
+                             "dimensions do not match.");
+  }
+
+  if (A.rows() == 0) {
+    return;
+  }
+
+  MTL::CommandBuffer *commandBuffer = impl_->context.queue()->commandBuffer();
+
+  MTL::ComputeCommandEncoder *encoder = commandBuffer->computeCommandEncoder();
+
+  encodeSpmvELL(encoder, A, x, y);
+
+  encoder->endEncoding();
+
+  commandBuffer->commit();
+  commandBuffer->waitUntilCompleted();
+}
 void MetalBackend::spmvRepeated(
-    const DeviceCSRMatrix& A,
+    const DeviceELLMatrix& A,
     const DeviceVector& x,
-    DeviceVector& Ax,
-    std::size_t repetitions)
+    DeviceVector& y,
+    int repetitions)
 {
+    if (repetitions <= 0)
+    {
+        return;
+    }
+
+    if (A.cols() != x.size())
+    {
+        throw std::runtime_error(
+            "MetalBackend::spmvRepeated ELL: matrix and input vector dimensions do not match."
+        );
+    }
+
+    if (A.rows() != y.size())
+    {
+        throw std::runtime_error(
+            "MetalBackend::spmvRepeated ELL: matrix and output vector dimensions do not match."
+        );
+    }
+
+    if (A.rows() == 0)
+    {
+        return;
+    }
+
     MTL::CommandBuffer* commandBuffer =
         impl_->context.queue()->commandBuffer();
 
     MTL::ComputeCommandEncoder* encoder =
         commandBuffer->computeCommandEncoder();
 
-    for (std::size_t iteration = 0;
+    for (int iteration = 0;
          iteration < repetitions;
          ++iteration)
     {
-        encodeSpmv(
+        encodeSpmvELL(
             encoder,
             A,
             x,
-            Ax
+            y
         );
     }
 
     encoder->endEncoding();
 
     commandBuffer->commit();
+
+    // One synchronization for the entire batch.
     commandBuffer->waitUntilCompleted();
 }
 

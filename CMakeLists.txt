@@ -84,6 +84,8 @@ if(APPLE)
             src/Permutation.cc 
             src/ReorderingStrategies/IdentityReordering.cc
             src/ReorderingStrategies/RCMReordering.cc
+            src/DeviceELLMatrix.cc
+            src/HostELLMatrix.cc
     )
 
     target_link_libraries(gpuSolver

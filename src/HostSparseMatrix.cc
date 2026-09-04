@@ -7,8 +7,8 @@
 
 namespace gpuSolver {
 HostCSRMatrix::HostCSRMatrix(std::size_t nRows, std::size_t nCols,
-                             std::size_t nnz, int *rowPtr, int *colIdxPtr,
-                             float *valPtr) {
+                             std::size_t nnz, const int *rowPtr, const int *colIdxPtr,
+                             const float *valPtr) {
 
   if (nRows == 0 || nCols == 0) {
     throw std::runtime_error(
@@ -55,8 +55,8 @@ HostCSRMatrix::HostCSRMatrix(std::size_t nRows, std::size_t nCols,
 }
 
 HostCSRMatrix::HostCSRMatrix(std::size_t nRows, std::size_t nCols,
-                             std::size_t nnz, int *rowPtr, int *colIdxPtr,
-                             float *valPtr, const Permutation &permutation)
+                             std::size_t nnz, const int *rowPtr, const int *colIdxPtr,
+                             const float *valPtr, const Permutation &permutation)
     : HostCSRMatrix(nRows, nCols, nnz, rowPtr, colIdxPtr, valPtr) {
 
   this->applyPermutation(permutation);

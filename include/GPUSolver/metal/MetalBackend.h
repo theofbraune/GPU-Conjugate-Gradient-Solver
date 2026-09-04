@@ -1,5 +1,6 @@
 #pragma once
 
+#include <GPUSolver/DeviceELLMatrix.h>
 #include <GPUSolver/DeviceSparseMatrix.h>
 #include <GPUSolver/DeviceVector.h>
 #include <GPUSolver/metal/MetalContext.h>
@@ -27,6 +28,10 @@ private:
   void encodeSpmv(MTL::ComputeCommandEncoder *encoder, const DeviceCSRMatrix &A,
                   const DeviceVector &x, DeviceVector &Ax);
 
+  void encodeSpmvELL(MTL::ComputeCommandEncoder *encoder,
+                     const DeviceELLMatrix &A, const DeviceVector &x,
+                     DeviceVector &Ax);
+
 public:
   explicit MetalBackend(MetalContext &context);
 
@@ -40,5 +45,10 @@ public:
 
   void spmvRepeated(const DeviceCSRMatrix &A, const DeviceVector &x,
                     DeviceVector &Ax, std::size_t repetitions);
+
+  void spmv(const DeviceELLMatrix &A, const DeviceVector &x, DeviceVector &y);
+
+  void spmvRepeated(const DeviceELLMatrix &A, const DeviceVector &x,
+                    DeviceVector &y, int repetitions);
 };
 } // namespace gpuSolver
