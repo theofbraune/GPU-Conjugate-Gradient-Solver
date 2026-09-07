@@ -34,6 +34,7 @@ namespace gpuSolver {
   
       DeviceVector(MetalContext& context, std::size_t size);
       DeviceVector(MetalContext& context, const std::vector<float>&values);
+      DeviceVector(MetalContext& context, std::size_t size, const float* values);
 
       DeviceVector(const DeviceVector&) = delete;
       DeviceVector& operator=(const DeviceVector&) = delete;

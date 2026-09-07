@@ -5,6 +5,7 @@
 #include <Metal/MTLBuffer.hpp>
 #include <Metal/MTLDevice.hpp>
 #include <Metal/MTLResource.hpp>
+#include <cstddef>
 #include <cstring>
 #include <iterator>
 #include <stdexcept>
@@ -27,6 +28,14 @@ DeviceVector::DeviceVector(MetalContext &context,
                                   MTL::ResourceStorageModeShared);
 }
 
+DeviceVector::DeviceVector(MetalContext &context, std::size_t size,
+                           const float *values)
+    : impl_(new Impl) {
+  impl_->size = size;
+  impl_->buffer =
+      context.device()->newBuffer(values, size * sizeof(float),
+                                  MTL::ResourceStorageModeShared);
+}
 DeviceVector::DeviceVector(MetalContext &context, size_t size)
     : impl_(new Impl) {
   impl_->size = size;
@@ -42,13 +51,14 @@ DeviceVector::~DeviceVector() {
   delete impl_;
 }
 
-void DeviceVector::updateValues( const float *values, const size_t sizeOfValues) {
+void DeviceVector::updateValues(const float *values,
+                                const size_t sizeOfValues) {
 
   // impl_->size = sizeOfValues;
   // impl_->buffer = context.device()->newBuffer(
   //     values, sizeOfValues * sizeof(float), MTL::ResourceStorageModeShared);
 
-  if(impl_->size!= sizeOfValues){
+  if (impl_->size != sizeOfValues) {
     throw std::runtime_error(" The passed values dont have the right size");
   }
 

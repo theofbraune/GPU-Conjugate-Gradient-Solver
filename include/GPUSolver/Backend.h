@@ -1,4 +1,5 @@
 #pragma once
+#include <cstddef>
 
 namespace gpuSolver {
 
@@ -17,6 +18,17 @@ public:
   virtual void submit(BackendEncoder &encoder) = 0;
 
   virtual void submitAndWait(BackendEncoder &encoder) = 0;
+
+  // handles to create objects
+  virtual DeviceVector *createVector(std::size_t size) = 0;
+
+  virtual DeviceVector *createVector(std::size_t size, const float* values) = 0;
+
+  virtual DeviceScalar *createScalar() = 0;
+
+  virtual DeviceScalar *createScalar(float value) = 0;
+
+  virtual DeviceCSRMatrix *createCSRMatrix(const HostCSRMatrix &matrix) = 0;
 
   // --------------------------------------------------------
   // Low-level asynchronous encoding API.
@@ -104,8 +116,6 @@ public:
                             DeviceScalar &output) = 0;
 
   virtual void scalarSqrt(const DeviceScalar &input, DeviceScalar &output) = 0;
-
-  virtual DeviceCSRMatrix *createCSRMatrix(const HostCSRMatrix &matrix) = 0;
 
   // virtual void updateCSRValues(DeviceCSRMatrix &deviceMatrix,
   //                              const HostCSRMatrix &hostMatrix) = 0;

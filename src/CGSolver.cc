@@ -1,6 +1,8 @@
+#include "GPUSolver/DeviceVector.h"
 #include <GPUSolver/CGSolver.h>
-#include <GPUSolver/HostSparseMatrix.h>
 #include <GPUSolver/DeviceSparseMatrix.h>
+#include <GPUSolver/HostSparseMatrix.h>
+#include <vector>
 
 namespace gpuSolver {
 
@@ -28,26 +30,40 @@ CGSolver::CGSolver(Backend &backend, Preconditioner &preconditioner,
   // this->deviceMatrix_ = this->backend_
 }
 
-
 CGSolver::~CGSolver() {
   delete deviceMatrix_;
-  delete hostMatrix_;
+  delete hostMatrix_;   
 }
 
-void CGSolver::setMaxIterations(std::size_t maxIterations){
+void CGSolver::setMaxIterations(std::size_t maxIterations) {
   this->maxIterations_ = maxIterations;
 }
 
-void CGSolver::setTolerance(float tolerance){
-  this->tolerance_ = tolerance;
-}
+void CGSolver::setTolerance(float tolerance) { this->tolerance_ = tolerance; }
 
-std::size_t CGSolver::maxIterations() const{
-  return this->maxIterations_;
-}
+std::size_t CGSolver::maxIterations() const { return this->maxIterations_; }
 
-float CGSolver::tolerance() const {
-  return this->tolerance_;
+float CGSolver::tolerance() const { return this->tolerance_; }
+
+void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
+
+  // first do the basic sanity checks if the vectors have proper size etc
+  if (b.size() != matrix_.rows()) {
+    throw std::runtime_error(
+        "CGSolver::solve: RHS size does not match matrix.");
+  }
+
+  if (x.size() != matrix_.cols()) {
+    throw std::runtime_error(
+        "CGSolver::solve: initial guess size does not match matrix.");
+  }
+
+  const std::size_t n = static_cast<std::size_t>(b.size());
+
+  float* xDat = x.data();
+  const float* bDat = b.data();
+
+  // DeviceVector xDev = DeviceVector()
 }
 
 } // namespace gpuSolver
