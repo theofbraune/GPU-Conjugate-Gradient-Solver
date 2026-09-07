@@ -1,114 +1,427 @@
 #pragma once
 
+#include <GPUSolver/Backend.h>
+#include <GPUSolver/BackendEncoder.h>
+
 #include <GPUSolver/DeviceELLMatrix.h>
 #include <GPUSolver/DeviceScalar.h>
 #include <GPUSolver/DeviceSparseMatrix.h>
 #include <GPUSolver/DeviceVector.h>
+
 #include <GPUSolver/metal/MetalContext.h>
 
-namespace MTL {
+#include <cstddef>
+
+
+namespace MTL
+{
 class ComputeCommandEncoder;
 class ComputePipelineState;
 class Device;
 class Library;
-} // namespace MTL
+}
 
-namespace gpuSolver {
-class MetalBackend {
 
+namespace gpuSolver
+{
+
+class MetalEncoder;
+
+
+class MetalBackend : public Backend
+{
 private:
-  struct Impl;
-  Impl *impl_;
+    struct Impl;
+    Impl* impl_;
 
-  void dispatch1D(MTL::ComputeCommandEncoder *encoder,
-                  MTL::ComputePipelineState *pipeline, size_t n);
 
-  MTL::ComputePipelineState *
-  makePipeline(MTL::Device *device, MTL::Library *library, const char *name);
+    // --------------------------------------------------------
+    // Metal-specific helpers.
+    // --------------------------------------------------------
 
-  void encodeSpmv(MTL::ComputeCommandEncoder *encoder, const DeviceCSRMatrix &A,
-                  const DeviceVector &x, DeviceVector &Ax);
+    void dispatch1D(
+        MTL::ComputeCommandEncoder* encoder,
+        MTL::ComputePipelineState* pipeline,
+        std::size_t n
+    );
 
-  void encodeSpmvELL(MTL::ComputeCommandEncoder *encoder,
-                     const DeviceELLMatrix &A, const DeviceVector &x,
-                     DeviceVector &Ax);
 
-  void encodeDot(MTL::ComputeCommandEncoder *encoder, const DeviceVector &x,
-                 const DeviceVector &y, DeviceScalar &result);
+    MTL::ComputePipelineState* makePipeline(
+        MTL::Device* device,
+        MTL::Library* library,
+        const char* name
+    );
 
-  void encodeScale(MTL::ComputeCommandEncoder *encoder, DeviceVector &x,
-                   const float scalar);
 
-  void encodeScale(MTL::ComputeCommandEncoder *encoder, DeviceVector &x,
-                   const DeviceScalar &scalar);
+    // --------------------------------------------------------
+    // Raw Metal encoding implementations.
+    //
+    // These operate directly on MTL::ComputeCommandEncoder.
+    // The public generic encode methods below unwrap a
+    // BackendEncoder into a MetalEncoder and call these.
+    // --------------------------------------------------------
 
-  void encodeAxpy(MTL::ComputeCommandEncoder *encoder,
-                  const DeviceScalar &alpha, const DeviceVector &x,
-                  DeviceVector &y);
-  void encodeAxpy(MTL::ComputeCommandEncoder *encoder, float alpha,
-                  const DeviceVector &x, DeviceVector &y);
+    void encodeSpmvMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        const DeviceCSRMatrix& A,
+        const DeviceVector& x,
+        DeviceVector& Ax
+    );
 
-  void encodeScalarSet(MTL::ComputeCommandEncoder *encoder, float input,
-                       DeviceScalar &output);
 
-  void encodeScalarCopy(MTL::ComputeCommandEncoder *encoder,
-                        const DeviceScalar &input, DeviceScalar &output);
+    void encodeSpmvELLMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        const DeviceELLMatrix& A,
+        const DeviceVector& x,
+        DeviceVector& Ax
+    );
 
-  void encodeScalarDivide(MTL::ComputeCommandEncoder *encoder,
-                          const DeviceScalar &numerator,
-                          const DeviceScalar &denominator,
-                          DeviceScalar &result);
 
-  void encodeScalarMultiply(MTL::ComputeCommandEncoder *encoder,
-                            const DeviceScalar &factor1,
-                            const DeviceScalar &factor2, DeviceScalar &result);
+    void encodeDotMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        const DeviceVector& x,
+        const DeviceVector& y,
+        DeviceScalar& result
+    );
 
-  void encodeScalarNegate(MTL::ComputeCommandEncoder *encoder,
-                          const DeviceScalar &input, DeviceScalar &output);
 
-  void encodeScalarSqrt(MTL::ComputeCommandEncoder *encoder,
-                        const DeviceScalar &input, DeviceScalar &output);
+    void encodeScaleMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        DeviceVector& x,
+        float scalar
+    );
 
-  // void encodeScale(MTL::ComputeCommandEncoder* encoder, const DeviceScalar& )
-  void ensureReductionScratchCapacity(std::size_t requiredCapacity);
+
+    void encodeScaleMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        DeviceVector& x,
+        const DeviceScalar& scalar
+    );
+
+
+    void encodeAxpyMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        float alpha,
+        const DeviceVector& x,
+        DeviceVector& y
+    );
+
+
+    void encodeAxpyMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        const DeviceScalar& alpha,
+        const DeviceVector& x,
+        DeviceVector& y
+    );
+
+
+    void encodeScalarSetMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        float value,
+        DeviceScalar& output
+    );
+
+
+    void encodeScalarCopyMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        const DeviceScalar& input,
+        DeviceScalar& output
+    );
+
+
+    void encodeScalarDivideMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        const DeviceScalar& numerator,
+        const DeviceScalar& denominator,
+        DeviceScalar& result
+    );
+
+
+    void encodeScalarMultiplyMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        const DeviceScalar& factor1,
+        const DeviceScalar& factor2,
+        DeviceScalar& result
+    );
+
+
+    void encodeScalarNegateMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        const DeviceScalar& input,
+        DeviceScalar& output
+    );
+
+
+    void encodeScalarSqrtMetal(
+        MTL::ComputeCommandEncoder* encoder,
+        const DeviceScalar& input,
+        DeviceScalar& output
+    );
+
+
+    void ensureReductionScratchCapacity(
+        std::size_t requiredCapacity
+    );
+
 
 public:
-  explicit MetalBackend(MetalContext &context);
+    explicit MetalBackend(
+        MetalContext& context
+    );
 
-  ~MetalBackend();
+    ~MetalBackend() override;
 
-  void scale(DeviceVector &x, float scalar);
 
-  void scale(DeviceVector &x, const DeviceScalar &scalar);
+    MetalBackend(
+        const MetalBackend&
+    ) = delete;
 
-  void axpy(float alpha, const DeviceVector &x, DeviceVector &y);
+    MetalBackend& operator=(
+        const MetalBackend&
+    ) = delete;
 
-  void axpy(const DeviceScalar &alpha, const DeviceVector &x, DeviceVector &y);
 
-  void spmv(const DeviceCSRMatrix &A, const DeviceVector &x, DeviceVector &Ax);
+    // ========================================================
+    // Encoder management.
+    // ========================================================
 
-  void spmvRepeated(const DeviceCSRMatrix &A, const DeviceVector &x,
-                    DeviceVector &Ax, std::size_t repetitions);
+    BackendEncoder* createEncoder() override;
 
-  void spmv(const DeviceELLMatrix &A, const DeviceVector &x, DeviceVector &y);
 
-  void spmvRepeated(const DeviceELLMatrix &A, const DeviceVector &x,
-                    DeviceVector &y, int repetitions);
+    void submit(
+        BackendEncoder& encoder
+    ) override;
 
-  void dot(const DeviceVector &x, const DeviceVector &y, DeviceScalar &result);
 
-  void scalarSet(float value, DeviceScalar &result);
+    void submitAndWait(
+        BackendEncoder& encoder
+    ) override;
 
-  void scalarCopy(const DeviceScalar &input, DeviceScalar &output);
 
-  void scalarDivide(const DeviceScalar &numerator,
-                    const DeviceScalar &denominator, DeviceScalar &result);
+    // ========================================================
+    // Generic asynchronous encoding API.
+    //
+    // These add work to an already-existing encoder.
+    // They do NOT submit and do NOT synchronize.
+    // ========================================================
 
-  void scalarMultiply(const DeviceScalar &factor1, const DeviceScalar &factor2,
-                      DeviceScalar &result);
+    void encodeScale(
+        BackendEncoder& encoder,
+        DeviceVector& x,
+        float scalar
+    ) override;
 
-  void scalarNegate(const DeviceScalar &input, DeviceScalar &output);
 
-  void scalarSqrt(const DeviceScalar &input, DeviceScalar &output);
+    void encodeScale(
+        BackendEncoder& encoder,
+        DeviceVector& x,
+        const DeviceScalar& scalar
+    ) override;
+
+
+    void encodeAxpy(
+        BackendEncoder& encoder,
+        float alpha,
+        const DeviceVector& x,
+        DeviceVector& y
+    ) override;
+
+
+    void encodeAxpy(
+        BackendEncoder& encoder,
+        const DeviceScalar& alpha,
+        const DeviceVector& x,
+        DeviceVector& y
+    ) override;
+
+
+    void encodeSpmv(
+        BackendEncoder& encoder,
+        const DeviceCSRMatrix& A,
+        const DeviceVector& x,
+        DeviceVector& Ax
+    ) override;
+
+
+    void encodeDot(
+        BackendEncoder& encoder,
+        const DeviceVector& x,
+        const DeviceVector& y,
+        DeviceScalar& result
+    ) override;
+
+
+    void encodeScalarSet(
+        BackendEncoder& encoder,
+        float value,
+        DeviceScalar& output
+    ) override;
+
+
+    void encodeScalarCopy(
+        BackendEncoder& encoder,
+        const DeviceScalar& input,
+        DeviceScalar& output
+    ) override;
+
+
+    void encodeScalarDivide(
+        BackendEncoder& encoder,
+        const DeviceScalar& numerator,
+        const DeviceScalar& denominator,
+        DeviceScalar& result
+    ) override;
+
+
+    void encodeScalarMultiply(
+        BackendEncoder& encoder,
+        const DeviceScalar& factor1,
+        const DeviceScalar& factor2,
+        DeviceScalar& result
+    ) override;
+
+
+    void encodeScalarNegate(
+        BackendEncoder& encoder,
+        const DeviceScalar& input,
+        DeviceScalar& output
+    ) override;
+
+
+    void encodeScalarSqrt(
+        BackendEncoder& encoder,
+        const DeviceScalar& input,
+        DeviceScalar& output
+    ) override;
+
+
+    // --------------------------------------------------------
+    // Metal-specific ELL encoding.
+    //
+    // Not part of the generic Backend interface for now.
+    // --------------------------------------------------------
+
+    void encodeSpmvELL(
+        BackendEncoder& encoder,
+        const DeviceELLMatrix& A,
+        const DeviceVector& x,
+        DeviceVector& Ax
+    );
+
+
+    // ========================================================
+    // Standalone synchronous convenience API.
+    //
+    // These create an encoder internally, encode one operation,
+    // submit it, and wait for completion.
+    //
+    // Useful for tests, debugging, benchmarks, etc.
+    // The CG solver should use the encode... methods instead.
+    // ========================================================
+
+    void scale(
+        DeviceVector& x,
+        float scalar
+    ) override;
+
+
+    void scale(
+        DeviceVector& x,
+        const DeviceScalar& scalar
+    ) override;
+
+
+    void axpy(
+        float alpha,
+        const DeviceVector& x,
+        DeviceVector& y
+    ) override;
+
+
+    void axpy(
+        const DeviceScalar& alpha,
+        const DeviceVector& x,
+        DeviceVector& y
+    ) override;
+
+
+    void spmv(
+        const DeviceCSRMatrix& A,
+        const DeviceVector& x,
+        DeviceVector& Ax
+    ) override;
+
+
+    void dot(
+        const DeviceVector& x,
+        const DeviceVector& y,
+        DeviceScalar& result
+    ) override;
+
+
+    void scalarSet(
+        float value,
+        DeviceScalar& result
+    ) override;
+
+
+    void scalarCopy(
+        const DeviceScalar& input,
+        DeviceScalar& output
+    ) override;
+
+
+    void scalarDivide(
+        const DeviceScalar& numerator,
+        const DeviceScalar& denominator,
+        DeviceScalar& result
+    ) override;
+
+
+    void scalarMultiply(
+        const DeviceScalar& factor1,
+        const DeviceScalar& factor2,
+        DeviceScalar& result
+    ) override;
+
+
+    void scalarNegate(
+        const DeviceScalar& input,
+        DeviceScalar& output
+    ) override;
+
+
+    void scalarSqrt(
+        const DeviceScalar& input,
+        DeviceScalar& output
+    ) override;
+
+
+    // --------------------------------------------------------
+    // Metal-specific ELL convenience/benchmark functions.
+    // --------------------------------------------------------
+
+    void spmv(
+        const DeviceELLMatrix& A,
+        const DeviceVector& x,
+        DeviceVector& Ax
+    );
+
+
+    void spmvRepeated(
+        const DeviceCSRMatrix& A,
+        const DeviceVector& x,
+        DeviceVector& Ax,
+        std::size_t repetitions
+    );
+
+
+    void spmvRepeated(
+        const DeviceELLMatrix& A,
+        const DeviceVector& x,
+        DeviceVector& Ax,
+        std::size_t repetitions
+    );
 };
+
 } // namespace gpuSolver

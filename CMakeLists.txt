@@ -78,6 +78,7 @@ if(APPLE)
             src/metal/MetalContext.cc
             src/metal/MetalImplementation.cc
             src/metal/MetalBackend.cc
+            src/metal/MetalEncoder.cc
             src/DeviceVector.cc
             src/DeviceSparseMatrix.cc
             src/DeviceScalar.cc
