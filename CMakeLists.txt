@@ -114,6 +114,10 @@ if(APPLE)
         "${PROJECT_SOURCE_DIR}/kernels/ReductionKernels.metal"
     )
 
+    set(GPUSOLVER_METAL_SCALAR_SOURCE
+        "${PROJECT_SOURCE_DIR}/kernels/ScalarKernels.metal"
+    )
+
     set(GPUSOLVER_METAL_OUTPUT_DIR
         "${CMAKE_BINARY_DIR}/metal"
     )
@@ -128,6 +132,10 @@ if(APPLE)
 
     set(GPUSOLVER_METAL_REDUCTION_AIR
         "${GPUSOLVER_METAL_OUTPUT_DIR}/reduction.air"
+    )
+
+    set(GPUSOLVER_METAL_SCALAR_AIR
+        "${GPUSOLVER_METAL_OUTPUT_DIR}/scalar.air"
     )
 
     set(GPUSOLVER_METAL_LIBRARY
@@ -213,6 +221,30 @@ if(APPLE)
             "Compiling Metal reduction kernels"
     )
 
+    # ------------------------------------------------------------
+    # Compile ScalarKernels.metal -> scalar.air
+    # ------------------------------------------------------------
+
+    add_custom_command(
+        OUTPUT
+        ${GPUSOLVER_METAL_SCALAR_AIR}
+
+        COMMAND
+            xcrun
+            -sdk macosx
+            metal
+            -c
+            ${GPUSOLVER_METAL_SCALAR_SOURCE}
+            -o
+            ${GPUSOLVER_METAL_SCALAR_AIR}
+
+        DEPENDS
+        ${GPUSOLVER_METAL_SCALAR_SOURCE}
+
+        COMMENT
+        "Compiling Metal scalar kernels"
+    )
+
 
     # ------------------------------------------------------------
     # Link all AIR files into one metallib
@@ -229,6 +261,7 @@ if(APPLE)
             ${GPUSOLVER_METAL_VECTOR_AIR}
             ${GPUSOLVER_METAL_SPMV_AIR}
             ${GPUSOLVER_METAL_REDUCTION_AIR}
+            ${GPUSOLVER_METAL_SCALAR_AIR}
             -o
             ${GPUSOLVER_METAL_LIBRARY}
 
@@ -236,6 +269,7 @@ if(APPLE)
             ${GPUSOLVER_METAL_VECTOR_AIR}
             ${GPUSOLVER_METAL_SPMV_AIR}
             ${GPUSOLVER_METAL_REDUCTION_AIR}
+            ${GPUSOLVER_METAL_SCALAR_AIR}
 
         COMMENT
             "Linking Metal library gpuSolver.metallib"

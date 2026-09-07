@@ -28,9 +28,19 @@ struct MetalBackend::Impl {
 
   MetalContext &context;
   MTL::ComputePipelineState *scalePipeline = nullptr;
+  MTL::ComputePipelineState *scalePipelineDevice = nullptr;
   MTL::ComputePipelineState *axpyPipeline = nullptr;
+  MTL::ComputePipelineState *axpyPipelineDevice = nullptr;
   MTL::ComputePipelineState *spmvPipeline = nullptr;
   MTL::ComputePipelineState *spmvELLPipeline = nullptr;
+
+  // scalar kernels
+  MTL::ComputePipelineState *scalarSetPipeline = nullptr;
+  MTL::ComputePipelineState *scalarCopyPipeline = nullptr;
+  MTL::ComputePipelineState *scalarDividePipeline = nullptr;
+  MTL::ComputePipelineState *scalarMultiplyPipeline = nullptr;
+  MTL::ComputePipelineState *scalarNegatePipeline = nullptr;
+  MTL::ComputePipelineState *scalarSqrtPipeline = nullptr;
 
   // now the dataa needed for the dot pipeline
   MTL::ComputePipelineState *dotPartialPipeline = nullptr;
@@ -106,8 +116,14 @@ MetalBackend::MetalBackend(MetalContext &context) {
   impl_->axpyPipeline =
       makePipeline(context.device(), context.library(), "axpy");
 
+  impl_->axpyPipelineDevice =
+      makePipeline(context.device(), context.library(), "axpyDevice");
+
   impl_->scalePipeline =
       makePipeline(context.device(), context.library(), "scale");
+
+  impl_->scalePipelineDevice =
+      makePipeline(context.device(), context.library(), "scaleDevice");
 
   impl_->spmvPipeline =
       makePipeline(context.device(), context.library(), "spmv");
@@ -120,6 +136,24 @@ MetalBackend::MetalBackend(MetalContext &context) {
 
   impl_->dotReducePipeline =
       makePipeline(context.device(), context.library(), "reduceSumPartial");
+  // make the scalar kernels
+  impl_->scalarSetPipeline =
+      makePipeline(context.device(), context.library(), "scalarSet");
+
+  impl_->scalarCopyPipeline =
+      makePipeline(context.device(), context.library(), "scalarCopy");
+  
+  impl_->scalarDividePipeline =
+      makePipeline(context.device(), context.library(), "scalarDivide");
+  
+  impl_->scalarMultiplyPipeline =
+      makePipeline(context.device(), context.library(), "scalarMultiply");
+  
+  impl_->scalarNegatePipeline =
+      makePipeline(context.device(), context.library(), "scalarNegate");
+  
+  impl_->scalarSqrtPipeline =
+      makePipeline(context.device(), context.library(), "scalarSqrt");
 }
 
 MetalBackend::~MetalBackend() {
@@ -128,8 +162,16 @@ MetalBackend::~MetalBackend() {
     impl_->scalePipeline->release();
   }
 
+  if (impl_->scalePipelineDevice) {
+    impl_->scalePipelineDevice->release();
+  }
+
   if (impl_->axpyPipeline) {
     impl_->axpyPipeline->release();
+  }
+
+  if (impl_->axpyPipelineDevice) {
+    impl_->axpyPipelineDevice->release();
   }
 
   if (impl_->spmvPipeline) {
@@ -154,6 +196,30 @@ MetalBackend::~MetalBackend() {
 
   if (impl_->reductionScratchB) {
     impl_->reductionScratchB->release();
+  }
+
+  if (impl_->scalarSetPipeline) {
+    impl_->scalarSetPipeline->release();
+  }
+
+  if (impl_->scalarCopyPipeline) {
+    impl_->scalarCopyPipeline->release();
+  }
+
+  if (impl_->scalarDividePipeline) {
+    impl_->scalarDividePipeline->release();
+  }
+
+  if (impl_->scalarMultiplyPipeline) {
+    impl_->scalarMultiplyPipeline->release();
+  }
+
+  if (impl_->scalarNegatePipeline) {
+    impl_->scalarNegatePipeline->release();
+  }
+
+  if (impl_->scalarSqrtPipeline) {
+    impl_->scalarSqrtPipeline->release();
   }
 
   delete impl_;
@@ -198,20 +264,20 @@ void MetalBackend::encodeScale(MTL::ComputeCommandEncoder *encoder,
 void MetalBackend::encodeScale(MTL::ComputeCommandEncoder *encoder,
                                DeviceVector &x, const DeviceScalar &alpha) {
 
-  encoder->setComputePipelineState(impl_->scalePipeline);
+  encoder->setComputePipelineState(impl_->scalePipelineDevice);
 
   encoder->setBuffer(x.getNativeBuffer(), 0, 0);
 
   encoder->setBuffer(alpha.getNativeBuffer(), 0, 1);
 
-  dispatch1D(encoder, impl_->scalePipeline, x.size());
+  dispatch1D(encoder, impl_->scalePipelineDevice, x.size());
 }
 
 void MetalBackend::encodeAxpy(MTL::ComputeCommandEncoder *encoder,
                               const DeviceScalar &alpha, const DeviceVector &x,
                               DeviceVector &y) {
 
-  encoder->setComputePipelineState(impl_->axpyPipeline);
+  encoder->setComputePipelineState(impl_->axpyPipelineDevice);
 
   MTL::Buffer *bufferForX = x.getNativeBuffer();
   MTL::Buffer *bufferForY = y.getNativeBuffer();
@@ -234,7 +300,7 @@ void MetalBackend::encodeAxpy(MTL::ComputeCommandEncoder *encoder,
   // encoder->setBytes(&alpha, sizeof(float), 2);
   encoder->setBuffer(alpha.getNativeBuffer(), 0, 2);
 
-  dispatch1D(encoder, impl_->axpyPipeline, sizeOfx);
+  dispatch1D(encoder, impl_->axpyPipelineDevice, sizeOfx);
 }
 
 void MetalBackend::encodeAxpy(MTL::ComputeCommandEncoder *encoder, float alpha,
@@ -413,6 +479,187 @@ void MetalBackend::encodeDot(MTL::ComputeCommandEncoder *encoder,
   }
 }
 
+void MetalBackend::encodeScalarDivide(
+    MTL::ComputeCommandEncoder* encoder,
+    const DeviceScalar& numerator,
+    const DeviceScalar& denominator,
+    DeviceScalar& result)
+{
+    encoder->setComputePipelineState(
+        impl_->scalarDividePipeline
+    );
+
+    encoder->setBuffer(
+        numerator.getNativeBuffer(),
+        0,
+        0
+    );
+
+    encoder->setBuffer(
+        denominator.getNativeBuffer(),
+        0,
+        1
+    );
+
+    encoder->setBuffer(
+        result.getNativeBuffer(),
+        0,
+        2
+    );
+
+    encoder->dispatchThreads(
+        MTL::Size(1, 1, 1),
+        MTL::Size(1, 1, 1)
+    );
+}
+
+
+void MetalBackend::encodeScalarMultiply(
+    MTL::ComputeCommandEncoder* encoder,
+    const DeviceScalar& factor1,
+    const DeviceScalar& factor2,
+    DeviceScalar& result)
+{
+    encoder->setComputePipelineState(
+        impl_->scalarMultiplyPipeline
+    );
+
+    encoder->setBuffer(
+        factor1.getNativeBuffer(),
+        0,
+        0
+    );
+
+    encoder->setBuffer(
+        factor2.getNativeBuffer(),
+        0,
+        1
+    );
+
+    encoder->setBuffer(
+        result.getNativeBuffer(),
+        0,
+        2
+    );
+
+    encoder->dispatchThreads(
+        MTL::Size(1, 1, 1),
+        MTL::Size(1, 1, 1)
+    );
+}
+
+
+void MetalBackend::encodeScalarNegate(
+    MTL::ComputeCommandEncoder* encoder,
+    const DeviceScalar& input,
+    DeviceScalar& result)
+{
+    encoder->setComputePipelineState(
+        impl_->scalarNegatePipeline
+    );
+
+    encoder->setBuffer(
+        input.getNativeBuffer(),
+        0,
+        0
+    );
+
+    encoder->setBuffer(
+        result.getNativeBuffer(),
+        0,
+        1
+    );
+
+    encoder->dispatchThreads(
+        MTL::Size(1, 1, 1),
+        MTL::Size(1, 1, 1)
+    );
+}
+
+void MetalBackend::encodeScalarSqrt(
+    MTL::ComputeCommandEncoder* encoder,
+    const DeviceScalar& input,
+    DeviceScalar& result)
+{
+    encoder->setComputePipelineState(
+        impl_->scalarSqrtPipeline
+    );
+
+    encoder->setBuffer(
+        input.getNativeBuffer(),
+        0,
+        0
+    );
+
+    encoder->setBuffer(
+        result.getNativeBuffer(),
+        0,
+        1
+    );
+
+    encoder->dispatchThreads(
+        MTL::Size(1, 1, 1),
+        MTL::Size(1, 1, 1)
+    );
+}
+
+
+
+void MetalBackend::encodeScalarSet(
+    MTL::ComputeCommandEncoder* encoder,
+    float input,
+    DeviceScalar& result)
+{
+    encoder->setComputePipelineState(
+        impl_->scalarSetPipeline
+    );
+
+    encoder->setBytes(
+        &input,
+        sizeof(float),
+        0
+    );
+
+    encoder->setBuffer(
+        result.getNativeBuffer(),
+        0,
+        1
+    );
+
+    encoder->dispatchThreads(
+        MTL::Size(1, 1, 1),
+        MTL::Size(1, 1, 1)
+    );
+}
+
+
+void MetalBackend::encodeScalarCopy(
+    MTL::ComputeCommandEncoder* encoder,
+    const DeviceScalar& input,
+    DeviceScalar& result)
+{
+    encoder->setComputePipelineState(
+        impl_->scalarCopyPipeline
+    );
+
+    encoder->setBuffer(
+        input.getNativeBuffer(),
+        0,
+        0
+    );
+
+    encoder->setBuffer(
+        result.getNativeBuffer(),
+        0,
+        1
+    );
+
+    encoder->dispatchThreads(
+        MTL::Size(1, 1, 1),
+        MTL::Size(1, 1, 1)
+    );
+}
+
 // carry out the actual operations
 void MetalBackend::scale(DeviceVector &x, float scalar) {
 
@@ -430,8 +677,7 @@ void MetalBackend::scale(DeviceVector &x, float scalar) {
   commandBuffer->waitUntilCompleted();
 }
 
-
-void MetalBackend::scale(DeviceVector &x, const DeviceScalar& scalar) {
+void MetalBackend::scale(DeviceVector &x, const DeviceScalar &scalar) {
 
   MTL::CommandBuffer *commandBuffer = impl_->context.queue()->commandBuffer();
 
@@ -461,7 +707,8 @@ void MetalBackend::axpy(float alpha, const DeviceVector &x, DeviceVector &y) {
   commandBuffer->waitUntilCompleted();
 }
 
-void MetalBackend::axpy(const DeviceScalar& alpha, const DeviceVector &x, DeviceVector &y) {
+void MetalBackend::axpy(const DeviceScalar &alpha, const DeviceVector &x,
+                        DeviceVector &y) {
 
   MTL::CommandBuffer *commandBuffer = impl_->context.queue()->commandBuffer();
 
@@ -600,18 +847,145 @@ void MetalBackend::spmvRepeated(const DeviceELLMatrix &A, const DeviceVector &x,
   commandBuffer->waitUntilCompleted();
 }
 
+void MetalBackend::dot(const DeviceVector &x, const DeviceVector &y,
+                       DeviceScalar &result) {
 
-void MetalBackend::dot(const DeviceVector& x, const DeviceVector& y, DeviceScalar& result){
+  MTL::CommandBuffer *commandBuffer = impl_->context.queue()->commandBuffer();
+  MTL::ComputeCommandEncoder *encoder = commandBuffer->computeCommandEncoder();
 
-  MTL::CommandBuffer* commandBuffer = impl_->context.queue()->commandBuffer();
-  MTL::ComputeCommandEncoder* encoder = commandBuffer->computeCommandEncoder();
-
-  encodeDot(encoder,x,y,result);
+  encodeDot(encoder, x, y, result);
 
   encoder->endEncoding();
   commandBuffer->commit();
   commandBuffer->waitUntilCompleted();
+}
+
+void MetalBackend::scalarSet(float value, DeviceScalar& result){
+  MTL::CommandBuffer* commandBuffer = impl_->context.queue()->commandBuffer();
+
+
+    MTL::ComputeCommandEncoder* encoder =
+        commandBuffer->computeCommandEncoder();
+
+    encodeScalarSet(
+        encoder,
+        value,
+        result
+    );
+
+    encoder->endEncoding();
+
+    commandBuffer->commit();
+    commandBuffer->waitUntilCompleted();
 
 }
 
+
+void MetalBackend::scalarCopy(const DeviceScalar& input, DeviceScalar& result){
+  MTL::CommandBuffer* commandBuffer = impl_->context.queue()->commandBuffer();
+
+
+    MTL::ComputeCommandEncoder* encoder =
+        commandBuffer->computeCommandEncoder();
+
+    encodeScalarCopy(
+        encoder,
+        input,
+        result
+    );
+
+    encoder->endEncoding();
+
+    commandBuffer->commit();
+    commandBuffer->waitUntilCompleted();
+
+}
+
+void MetalBackend::scalarDivide(
+    const DeviceScalar& numerator,
+    const DeviceScalar& denominator,
+    DeviceScalar& result)
+{
+    MTL::CommandBuffer* commandBuffer =
+        impl_->context.queue()->commandBuffer();
+
+    MTL::ComputeCommandEncoder* encoder =
+        commandBuffer->computeCommandEncoder();
+
+    encodeScalarDivide(
+        encoder,
+        numerator,
+        denominator,
+        result
+    );
+
+    encoder->endEncoding();
+
+    commandBuffer->commit();
+    commandBuffer->waitUntilCompleted();
+}
+
+
+void MetalBackend::scalarMultiply(
+    const DeviceScalar& factor1,
+    const DeviceScalar& factor2,
+    DeviceScalar& result)
+{
+    MTL::CommandBuffer* commandBuffer =
+        impl_->context.queue()->commandBuffer();
+
+    MTL::ComputeCommandEncoder* encoder =
+        commandBuffer->computeCommandEncoder();
+
+    encodeScalarMultiply(
+        encoder,
+        factor1,
+        factor2,
+        result
+    );
+
+    encoder->endEncoding();
+
+    commandBuffer->commit();
+    commandBuffer->waitUntilCompleted();
+}
+
+void MetalBackend::scalarNegate(const DeviceScalar& input, DeviceScalar& result){
+  MTL::CommandBuffer* commandBuffer = impl_->context.queue()->commandBuffer();
+
+
+    MTL::ComputeCommandEncoder* encoder =
+        commandBuffer->computeCommandEncoder();
+
+    encodeScalarNegate(
+        encoder,
+        input,
+        result
+    );
+
+    encoder->endEncoding();
+
+    commandBuffer->commit();
+    commandBuffer->waitUntilCompleted();
+}
+
+void MetalBackend::scalarSqrt(const DeviceScalar& input, DeviceScalar& result){
+  MTL::CommandBuffer* commandBuffer = impl_->context.queue()->commandBuffer();
+
+
+    MTL::ComputeCommandEncoder* encoder =
+        commandBuffer->computeCommandEncoder();
+
+    encodeScalarSqrt(
+        encoder,
+        input,
+        result
+    );
+
+    encoder->endEncoding();
+
+    commandBuffer->commit();
+    commandBuffer->waitUntilCompleted();
+
+}
 } // namespace gpuSolver

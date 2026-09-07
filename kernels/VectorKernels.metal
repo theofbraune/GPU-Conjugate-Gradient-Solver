@@ -17,6 +17,15 @@ kernel void scale(
 }
 
 
+kernel void scaleDevice(
+  device float* x [[buffer(0)]],
+  device float* alpha [[buffer(1)]],
+  uint id[[thread_position_in_grid]]
+){
+  x[id] *=alpha[0];
+}
+
+
 kernel void axpy(
   device float* x [[buffer(0)]],
   device float* y [[buffer(1)]],
@@ -27,3 +36,11 @@ kernel void axpy(
 }
 
 
+kernel void axpyDevice(
+  device float* x [[buffer(0)]],
+  device float* y [[buffer(1)]],
+  device float* alpha [[buffer(2)]],
+  uint id[[thread_position_in_grid]]
+){
+  y[id] += alpha[0] * x[id];
+}

@@ -29,6 +29,21 @@ set_target_properties(dotProductTests PROPERTIES
 )
 
 
+add_executable(scalarKernelTests
+  ScalarKernelTests.cc
+)
+
+target_link_libraries(scalarKernelTests
+    PRIVATE
+        gpuSolver::gpuSolver
+        GTest::gtest_main
+)
+
+set_target_properties(scalarKernelTests PROPERTIES
+    FOLDER tests
+)
+
+
 if(APPLE)
   add_subdirectory(metal)
 endif()
