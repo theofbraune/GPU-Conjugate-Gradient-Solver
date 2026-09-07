@@ -80,6 +80,7 @@ if(APPLE)
             src/metal/MetalBackend.cc
             src/DeviceVector.cc
             src/DeviceSparseMatrix.cc
+            src/DeviceScalar.cc
             src/HostSparseMatrix.cc 
             src/Permutation.cc 
             src/ReorderingStrategies/IdentityReordering.cc
@@ -97,25 +98,40 @@ if(APPLE)
         PRIVATE
             GPUSOLVER_USE_METAL
     )
-
     # ------------------------------------------------------------
-    # here do the compilation of the gpu files
+    # Metal kernel sources
     # ------------------------------------------------------------
 
-    set(GPUSOLVER_METAL_KERNEL_SOURCE
-      "${PROJECT_SOURCE_DIR}/kernels/VectorKernels.metal"
+    set(GPUSOLVER_METAL_VECTOR_SOURCE
+        "${PROJECT_SOURCE_DIR}/kernels/VectorKernels.metal"
+    )
+
+    set(GPUSOLVER_METAL_SPMV_SOURCE
+        "${PROJECT_SOURCE_DIR}/kernels/SpMVKernels.metal"
+    )
+
+    set(GPUSOLVER_METAL_REDUCTION_SOURCE
+        "${PROJECT_SOURCE_DIR}/kernels/ReductionKernels.metal"
     )
 
     set(GPUSOLVER_METAL_OUTPUT_DIR
-      "${CMAKE_BINARY_DIR}/metal"
+        "${CMAKE_BINARY_DIR}/metal"
     )
 
-    set(GPUSOLVER_METAL_AIR
+    set(GPUSOLVER_METAL_VECTOR_AIR
         "${GPUSOLVER_METAL_OUTPUT_DIR}/vector.air"
     )
 
+    set(GPUSOLVER_METAL_SPMV_AIR
+        "${GPUSOLVER_METAL_OUTPUT_DIR}/spmv.air"
+    )
+
+    set(GPUSOLVER_METAL_REDUCTION_AIR
+        "${GPUSOLVER_METAL_OUTPUT_DIR}/reduction.air"
+    )
+
     set(GPUSOLVER_METAL_LIBRARY
-        "${GPUSOLVER_METAL_OUTPUT_DIR}/vector.metallib"
+        "${GPUSOLVER_METAL_OUTPUT_DIR}/gpuSolver.metallib"
     )
 
     file(MAKE_DIRECTORY
@@ -123,25 +139,84 @@ if(APPLE)
     )
 
 
+    # ------------------------------------------------------------
+    # Compile VectorKernels.metal -> vector.air
+    # ------------------------------------------------------------
+
     add_custom_command(
         OUTPUT
-            ${GPUSOLVER_METAL_AIR}
+            ${GPUSOLVER_METAL_VECTOR_AIR}
 
         COMMAND
             xcrun
             -sdk macosx
             metal
             -c
-            ${GPUSOLVER_METAL_KERNEL_SOURCE}
+            ${GPUSOLVER_METAL_VECTOR_SOURCE}
             -o
-            ${GPUSOLVER_METAL_AIR}
+            ${GPUSOLVER_METAL_VECTOR_AIR}
 
         DEPENDS
-            ${GPUSOLVER_METAL_KERNEL_SOURCE}
+            ${GPUSOLVER_METAL_VECTOR_SOURCE}
 
         COMMENT
-            "Compiling Metal kernel vector.metal"
+            "Compiling Metal vector kernels"
     )
+
+
+    # ------------------------------------------------------------
+    # Compile SpMVKernels.metal -> spmv.air
+    # ------------------------------------------------------------
+
+    add_custom_command(
+        OUTPUT
+            ${GPUSOLVER_METAL_SPMV_AIR}
+
+        COMMAND
+            xcrun
+            -sdk macosx
+            metal
+            -c
+            ${GPUSOLVER_METAL_SPMV_SOURCE}
+            -o
+            ${GPUSOLVER_METAL_SPMV_AIR}
+
+        DEPENDS
+            ${GPUSOLVER_METAL_SPMV_SOURCE}
+
+        COMMENT
+            "Compiling Metal SpMV kernels"
+    )
+
+
+    # ------------------------------------------------------------
+    # Compile ReductionKernels.metal -> reduction.air
+    # ------------------------------------------------------------
+
+    add_custom_command(
+        OUTPUT
+            ${GPUSOLVER_METAL_REDUCTION_AIR}
+
+        COMMAND
+            xcrun
+            -sdk macosx
+            metal
+            -c
+            ${GPUSOLVER_METAL_REDUCTION_SOURCE}
+            -o
+            ${GPUSOLVER_METAL_REDUCTION_AIR}
+
+        DEPENDS
+            ${GPUSOLVER_METAL_REDUCTION_SOURCE}
+
+        COMMENT
+            "Compiling Metal reduction kernels"
+    )
+
+
+    # ------------------------------------------------------------
+    # Link all AIR files into one metallib
+    # ------------------------------------------------------------
 
     add_custom_command(
         OUTPUT
@@ -151,28 +226,36 @@ if(APPLE)
             xcrun
             -sdk macosx
             metallib
-            ${GPUSOLVER_METAL_AIR}
+            ${GPUSOLVER_METAL_VECTOR_AIR}
+            ${GPUSOLVER_METAL_SPMV_AIR}
+            ${GPUSOLVER_METAL_REDUCTION_AIR}
             -o
             ${GPUSOLVER_METAL_LIBRARY}
 
         DEPENDS
-            ${GPUSOLVER_METAL_AIR}
+            ${GPUSOLVER_METAL_VECTOR_AIR}
+            ${GPUSOLVER_METAL_SPMV_AIR}
+            ${GPUSOLVER_METAL_REDUCTION_AIR}
 
         COMMENT
-            "Linking Metal library vector.metallib"
+            "Linking Metal library gpuSolver.metallib"
     )
+
 
     add_custom_target(gpuSolverMetalKernels
         DEPENDS
             ${GPUSOLVER_METAL_LIBRARY}
     )
 
+
     add_dependencies(
         gpuSolver
         gpuSolverMetalKernels
     )
 
-    target_compile_definitions(gpuSolver
+
+    target_compile_definitions(
+        gpuSolver
         PRIVATE
             GPUSOLVER_METAL_LIBRARY="${GPUSOLVER_METAL_LIBRARY}"
     )

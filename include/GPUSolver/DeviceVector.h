@@ -40,14 +40,13 @@ namespace gpuSolver {
 
       size_t size() const;
 
-      void upload(MetalContext& context, const float* values, const size_t sizeOfValues);
+      size_t size();
+
+      void updateValues(const float* values, const size_t sizeOfValues);
 
       float* download() const;
 
 
-      size_t getSizeOfVector();
-
-      size_t getSizeOfVector() const;
 
 
 

@@ -42,12 +42,19 @@ DeviceVector::~DeviceVector() {
   delete impl_;
 }
 
-void DeviceVector::upload(MetalContext &context, const float *values,
-                          const size_t sizeOfValues) {
+void DeviceVector::updateValues( const float *values, const size_t sizeOfValues) {
 
-  impl_->size = sizeOfValues;
-  impl_->buffer = context.device()->newBuffer(
-      values, sizeOfValues * sizeof(float), MTL::ResourceStorageModeShared);
+  // impl_->size = sizeOfValues;
+  // impl_->buffer = context.device()->newBuffer(
+  //     values, sizeOfValues * sizeof(float), MTL::ResourceStorageModeShared);
+
+  if(impl_->size!= sizeOfValues){
+    throw std::runtime_error(" The passed values dont have the right size");
+  }
+
+  float *destination = static_cast<float *>(impl_->buffer->contents());
+
+  std::memcpy(destination, values, sizeOfValues * sizeof(float));
 }
 
 float *DeviceVector::download() const {
@@ -76,10 +83,8 @@ MTL::Buffer *DeviceVector::getNativeBuffer() const {
   return impl_->buffer;
 }
 
-size_t DeviceVector::getSizeOfVector() { return impl_->size; }
+size_t DeviceVector::size() { return impl_->size; }
 
-size_t DeviceVector::getSizeOfVector() const { return impl_->size; }
-
-std::size_t DeviceVector::size() const { return impl_->size; }
+size_t DeviceVector::size() const { return impl_->size; }
 
 } // namespace gpuSolver
