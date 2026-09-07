@@ -10,6 +10,8 @@ namespace gpuSolver
 
 class Backend;
 class Preconditioner;
+class HostCSRMatrix;
+class DeviceCSRMatrix;
 
 class CGSolver
 {
@@ -24,16 +26,23 @@ private:
     Backend& backend_;
     Preconditioner& preconditioner_;
 
+    Matrix matrix_;
+
+    HostCSRMatrix* hostMatrix_;
+    DeviceCSRMatrix* deviceMatrix_;
+
     std::size_t maxIterations_;
     float tolerance_;
+
 
 public:
     CGSolver(
         Backend& backend,
-        Preconditioner& preconditioner
+        Preconditioner& preconditioner,
+        const Matrix& matrix
     );
 
-    ~CGSolver() = default;
+    ~CGSolver();
 
     CGSolver(
         const CGSolver&
@@ -55,10 +64,12 @@ public:
 
     float tolerance() const;
 
-    Eigen::VectorXf solve(
-        const Matrix& A,
-        const Eigen::VectorXf& b
+    void solve(
+        const Eigen::VectorXf& b,
+        Eigen::VectorXf& x
     );
 };
 
-} // namespace gpuSolverpragma once
+} // namespace gpuSolver
+
+

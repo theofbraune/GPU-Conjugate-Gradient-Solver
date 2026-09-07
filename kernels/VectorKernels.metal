@@ -44,3 +44,11 @@ kernel void axpyDevice(
 ){
   y[id] += alpha[0] * x[id];
 }
+
+kernel void vectorCopy(
+  device const float* vectorIn [[buffer(0)]],
+  device float* vectorCopy [[buffer(1)]],
+  uint id[[thread_position_in_grid]]
+){
+  vectorCopy[id] = vectorIn[id];
+}

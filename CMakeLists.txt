@@ -51,7 +51,7 @@ endif()
 # ------------------------------------------------------------
 
 add_library(gpuSolver
-    src/ConjugateGradient.cc
+  src/CGSolver.cc
 )
 
 add_library(gpuSolver::gpuSolver ALIAS gpuSolver)
@@ -88,6 +88,7 @@ if(APPLE)
             src/ReorderingStrategies/RCMReordering.cc
             src/DeviceELLMatrix.cc
             src/HostELLMatrix.cc
+            src/Preconditioners/IdentityPreconditioner.cc
     )
 
     target_link_libraries(gpuSolver

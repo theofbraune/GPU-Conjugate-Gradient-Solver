@@ -1,4 +1,3 @@
-
 #pragma once
 
 namespace gpuSolver
@@ -21,4 +20,4 @@ public:
     ) = 0;
 };
 
-} // namespace gpuSolverpragma once
+} // namespace gpuSolver
