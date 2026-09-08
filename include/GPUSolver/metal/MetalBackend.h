@@ -82,7 +82,7 @@ private:
 
   void encodeScalarDivideMetal(MTL::ComputeCommandEncoder *encoder,
                                const DeviceScalar &numerator,
-                               const DeviceScalar &denominator,
+                               const DeviceScalar &denominator,   
                                DeviceScalar &result);
 
   void encodeScalarMultiplyMetal(MTL::ComputeCommandEncoder *encoder,
@@ -230,6 +230,15 @@ public:
 
 
   DeviceCSRMatrix *createCSRMatrix(const HostCSRMatrix &matrix) override;
+
+  DeviceVector *createVector(std::size_t size) override;
+
+  DeviceVector *createVector(std::size_t size, const float* values) override;
+
+  DeviceScalar *createScalar() override;
+
+  DeviceScalar *createScalar(float value) override;
+
 };
 
 } // namespace gpuSolver

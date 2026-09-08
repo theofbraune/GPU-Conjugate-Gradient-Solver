@@ -1,7 +1,12 @@
 #include "GPUSolver/DeviceVector.h"
+#include <GPUSolver/Backend.h>
+#include <GPUSolver/BackendEncoder.h>
 #include <GPUSolver/CGSolver.h>
+#include <GPUSolver/DeviceScalar.h>
 #include <GPUSolver/DeviceSparseMatrix.h>
 #include <GPUSolver/HostSparseMatrix.h>
+#include <GPUSolver/Preconditioner.h>
+#include <utility>
 #include <vector>
 
 namespace gpuSolver {
@@ -21,18 +26,19 @@ CGSolver::CGSolver(Backend &backend, Preconditioner &preconditioner,
 
   matrix_.makeCompressed();
 
+
   this->hostMatrix_ = new HostCSRMatrix(
       static_cast<std::size_t>(matrix_.rows()),
       static_cast<std::size_t>(matrix_.cols()),
       static_cast<std::size_t>(matrix_.nonZeros()), matrix_.outerIndexPtr(),
       matrix_.innerIndexPtr(), matrix_.valuePtr());
 
-  // this->deviceMatrix_ = this->backend_
+  this->deviceMatrix_ = this->backend_.createCSRMatrix(*hostMatrix_);
 }
 
 CGSolver::~CGSolver() {
   delete deviceMatrix_;
-  delete hostMatrix_;   
+  delete hostMatrix_;
 }
 
 void CGSolver::setMaxIterations(std::size_t maxIterations) {
@@ -57,13 +63,179 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
     throw std::runtime_error(
         "CGSolver::solve: initial guess size does not match matrix.");
   }
+  const float rhsNorm = b.norm();
+  constexpr float rhsZeroTolerance = 1e-12f;
+  if (rhsNorm < rhsZeroTolerance) {
+    x.setZero();
+    return;
+  }
 
   const std::size_t n = static_cast<std::size_t>(b.size());
 
-  float* xDat = x.data();
-  const float* bDat = b.data();
+  float *xDat = x.data();
+  const float *bDat = b.data();
 
-  // DeviceVector xDev = DeviceVector()
+  DeviceVector *xDev = this->backend_.createVector(n, xDat);
+
+  DeviceVector *bDev = this->backend_.createVector(n, bDat);
+
+  DeviceVector *resDev = this->backend_.createVector(n);
+
+  DeviceVector *AxDev = this->backend_.createVector(n);
+
+  BackendEncoder* backendEncoder_ = backend_.createEncoder();
+  // compute Ax
+  this->backend_.encodeSpmv(*backendEncoder_, *deviceMatrix_, *xDev, *AxDev);
+
+  this->backend_.encodeCopy(*backendEncoder_, *bDev, *resDev);
+
+  // compute the residual vector
+  this->backend_.encodeAxpy(*backendEncoder_, -1.0f, *AxDev, *resDev);
+
+  // create the z0 vector
+  DeviceVector *zkDev = this->backend_.createVector(n);
+  DeviceVector *zkPOneDev = this->backend_.createVector(n);
+  this->preconditioner_.apply(backend_, *backendEncoder_, *resDev, *zkDev);
+
+  DeviceVector *pkDev = this->backend_.createVector(n);
+  this->backend_.encodeCopy(*backendEncoder_, *zkDev, *pkDev);
+
+  // DeviceScalar *rDotZk = this->backend_.createScalar();
+  DeviceScalar *pDotAp = this->backend_.createScalar();
+  DeviceVector *ApkDev = this->backend_.createVector(n);
+  DeviceVector *resKpOneDev = this->backend_.createVector(n);
+
+  DeviceScalar *alphaKDev = this->backend_.createScalar();
+  DeviceScalar *negAlphaKDev = this->backend_.createScalar();
+  DeviceScalar *betaKDev = this->backend_.createScalar();
+
+  DeviceScalar *normResSqDev = this->backend_.createScalar();
+  DeviceScalar *normRHSSqDev = this->backend_.createScalar();
+
+  DeviceScalar *relativeResidualSquaredDev = this->backend_.createScalar();
+
+  // DeviceScalar *rkPOneDotZkPOne = this->backend_.createScalar();
+  DeviceScalar *rhoDev = backend_.createScalar();
+  DeviceScalar *rhoNewDev = backend_.createScalar();
+
+  backend_.encodeDot(*backendEncoder_, *bDev, *bDev, *normRHSSqDev);
+
+  this->backend_.encodeDot(*backendEncoder_, *resDev, *zkDev,
+                           *rhoDev); // TODO later put here proper class
+  // do the check that if the norm of b is too small, just return zero for x and
+  // never go in the loop
+  backend_.encodeDot(*backendEncoder_, *resDev, *resDev, *normResSqDev);
+  backend_.encodeScalarDivide(*backendEncoder_, *normResSqDev, *normRHSSqDev,
+                              *relativeResidualSquaredDev);
+  backend_.submitAndWait(*backendEncoder_);
+  float firstRes = relativeResidualSquaredDev->download();
+  delete backendEncoder_;
+  backendEncoder_ = nullptr;
+
+  if (firstRes < tolerance_ * tolerance_) {
+
+    delete xDev;
+    delete bDev;
+    delete resDev;
+    delete AxDev;
+    delete zkDev;
+    delete zkPOneDev;
+    delete pkDev;
+    delete pDotAp;
+    delete ApkDev;
+    delete resKpOneDev;
+    delete alphaKDev;
+    delete negAlphaKDev;
+    delete betaKDev;
+    delete normRHSSqDev;
+    delete normResSqDev;
+    delete relativeResidualSquaredDev;
+    delete rhoDev;
+    delete rhoNewDev;
+    return;
+  }
+
+  for (std::size_t itr = 0; itr < this->maxIterations_; itr++) {
+    backendEncoder_ = backend_.createEncoder();
+    this->backend_.encodeSpmv(*backendEncoder_, *deviceMatrix_, *pkDev,
+                              *ApkDev);
+    this->backend_.encodeDot(*backendEncoder_, *pkDev, *ApkDev, *pDotAp);
+
+    this->backend_.encodeScalarDivide(*backendEncoder_, *rhoDev, *pDotAp,
+                                      *alphaKDev);
+
+    // now compute the update of x
+    backend_.encodeAxpy(*backendEncoder_, *alphaKDev, *pkDev, *xDev);
+
+    backend_.encodeScalarNegate(*backendEncoder_, *alphaKDev, *negAlphaKDev);
+
+    backend_.encodeCopy(*backendEncoder_, *resDev, *resKpOneDev);
+    // now compute resNew = res - alpha_k Ap_k
+    backend_.encodeAxpy(*backendEncoder_, *negAlphaKDev, *ApkDev, *resKpOneDev);
+
+    backend_.encodeDot(*backendEncoder_, *resKpOneDev, *resKpOneDev,
+                       *normResSqDev);
+
+    backend_.encodeScalarDivide(*backendEncoder_, *normResSqDev, *normRHSSqDev,
+                                *relativeResidualSquaredDev);
+
+
+    this->preconditioner_.apply(backend_, *backendEncoder_, *resKpOneDev,
+                                *zkPOneDev);
+    // now compute the beta_k scalar
+    // first compute the 2 dot products that are needed
+    backend_.encodeDot(*backendEncoder_, *resKpOneDev, *zkPOneDev,
+                       *rhoNewDev);
+
+    backend_.encodeScalarDivide(*backendEncoder_, *rhoNewDev, *rhoDev,
+                                *betaKDev);
+
+    // scale pk with beta
+    backend_.encodeScale(*backendEncoder_, *pkDev, *betaKDev);
+
+    // now build the new p vector
+    backend_.encodeAxpy(*backendEncoder_, 1.0f, *zkPOneDev, *pkDev);
+
+    backend_.submitAndWait(*backendEncoder_);
+    float residualHost = relativeResidualSquaredDev->download();
+    delete backendEncoder_;
+    backendEncoder_ = nullptr;
+    if (residualHost < tolerance_ * tolerance_) {
+      break;
+    }
+
+
+    // swap the two rho's
+    std::swap(rhoDev, rhoNewDev);
+    std::swap(resDev, resKpOneDev);
+    std::swap(zkDev, zkPOneDev);
+  }
+
+  // convert back to the vector x of what xDev has been
+  const float *xResult = xDev->download();
+
+  for (std::size_t i = 0; i < n; ++i) {
+    x[static_cast<Eigen::Index>(i)] = xResult[i];
+  }
+  //--------------------------clean up----------------
+  delete xDev;
+  delete bDev;
+  delete resDev;
+  delete AxDev;
+  delete zkDev;
+  delete zkPOneDev;
+  delete pkDev;
+  delete pDotAp;
+  delete ApkDev;
+  delete resKpOneDev;
+  delete alphaKDev;
+  delete negAlphaKDev;
+  delete betaKDev;
+  delete normRHSSqDev;
+  delete normResSqDev;
+  delete relativeResidualSquaredDev;
+  delete rhoDev;
+  delete rhoNewDev;
 }
 
 } // namespace gpuSolver

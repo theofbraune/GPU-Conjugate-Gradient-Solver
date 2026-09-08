@@ -4,10 +4,10 @@
 #include "GPUSolver/DeviceVector.h"
 #include <Foundation/NSError.hpp>
 #include <Foundation/NSString.hpp>
+#include <GPUSolver/DeviceSparseMatrix.h>
+#include <GPUSolver/HostSparseMatrix.h>
 #include <GPUSolver/metal/MetalBackend.h>
 #include <GPUSolver/metal/MetalEncoder.h>
-#include <GPUSolver/HostSparseMatrix.h>
-#include <GPUSolver/DeviceSparseMatrix.h>
 
 #include <GPUSolver/metal/MetalContext.h>
 
@@ -235,7 +235,7 @@ MetalBackend::~MetalBackend() {
     impl_->scalarSqrtPipeline->release();
   }
 
-  if(impl_->vectorCopyPipeline) {
+  if (impl_->vectorCopyPipeline) {
     impl_->vectorCopyPipeline->release();
   }
 
@@ -295,12 +295,11 @@ void MetalBackend::encodeCopyMetal(MTL::ComputeCommandEncoder *encoder,
                                    const DeviceVector &x, DeviceVector &xCopy) {
   encoder->setComputePipelineState(impl_->vectorCopyPipeline);
 
-  encoder->setBuffer(x.getNativeBuffer(),0,0);
+  encoder->setBuffer(x.getNativeBuffer(), 0, 0);
 
-  encoder->setBuffer(xCopy.getNativeBuffer(),0,1);
+  encoder->setBuffer(xCopy.getNativeBuffer(), 0, 1);
 
   dispatch1D(encoder, impl_->vectorCopyPipeline, x.size());
-
 }
 
 void MetalBackend::encodeAxpyMetal(MTL::ComputeCommandEncoder *encoder,
@@ -1077,11 +1076,36 @@ void MetalBackend::scalarSqrt(const DeviceScalar &input, DeviceScalar &result) {
   // commandBuffer->waitUntilCompleted();
 }
 
-DeviceCSRMatrix* MetalBackend::createCSRMatrix(const HostCSRMatrix &matrix){
+DeviceCSRMatrix *MetalBackend::createCSRMatrix(const HostCSRMatrix &matrix) {
 
-  DeviceCSRMatrix* csr = new DeviceCSRMatrix(this->impl_->context, matrix);
+  DeviceCSRMatrix *csr = new DeviceCSRMatrix(this->impl_->context, matrix);
 
   return csr;
+}
+
+DeviceVector *MetalBackend::createVector(std::size_t size) {
+  DeviceVector *devVec = new DeviceVector(this->impl_->context, size);
+  return devVec;
+}
+
+DeviceVector *MetalBackend::createVector(std::size_t size,
+                                         const float *values) {
+
+  DeviceVector *devVec = new DeviceVector(this->impl_->context, size, values);
+  return devVec;
+}
+
+DeviceScalar *MetalBackend::createScalar() {
+  DeviceScalar* devSca = new DeviceScalar(this->impl_->context);
+
+  return devSca;
 
 }
+
+DeviceScalar *MetalBackend::createScalar(float value) {
+  DeviceScalar* devSca = new DeviceScalar(this->impl_->context, value);
+  return devSca;
+
+}
+
 } // namespace gpuSolver

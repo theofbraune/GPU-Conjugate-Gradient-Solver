@@ -1,3 +1,7 @@
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
+    "${CMAKE_BINARY_DIR}/bin/tests"
+)
+
 include(googletest)
 
 
@@ -43,6 +47,20 @@ target_link_libraries(scalarKernelTests
 set_target_properties(scalarKernelTests PROPERTIES
     FOLDER tests
 )
+
+add_executable(sanityCheckCG
+  mainCGSanityCheck.cc
+)
+target_link_libraries(sanityCheckCG
+  PRIVATE 
+  gpuSolver::gpuSolver
+  GTest::gtest_main
+)
+
+target_compile_definitions(sanityCheckCG
+    PRIVATE
+        PROJECT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
 
 include(libigl)
 

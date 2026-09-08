@@ -1,5 +1,6 @@
 #pragma once
 
+#include "GPUSolver/BackendEncoder.h"
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 
@@ -9,6 +10,7 @@ namespace gpuSolver
 {
 
 class Backend;
+class BackendEncoder;
 class Preconditioner;
 class HostCSRMatrix;
 class DeviceCSRMatrix;
