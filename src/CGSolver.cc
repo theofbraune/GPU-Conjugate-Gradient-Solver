@@ -34,6 +34,8 @@ CGSolver::CGSolver(Backend &backend, Preconditioner &preconditioner,
       matrix_.innerIndexPtr(), matrix_.valuePtr());
 
   this->deviceMatrix_ = this->backend_.createCSRMatrix(*hostMatrix_);
+
+  this->preconditioner_.initialize(backend, *hostMatrix_, *deviceMatrix_);
 }
 
 CGSolver::~CGSolver() {
@@ -152,6 +154,7 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
     delete relativeResidualSquaredDev;
     delete rhoDev;
     delete rhoNewDev;
+    this->nOfIterations = 0;
     return;
   }
 
@@ -201,6 +204,7 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
     delete backendEncoder_;
     backendEncoder_ = nullptr;
     if (residualHost < tolerance_ * tolerance_) {
+      this->nOfIterations = itr;
       break;
     }
 
@@ -209,6 +213,9 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
     std::swap(rhoDev, rhoNewDev);
     std::swap(resDev, resKpOneDev);
     std::swap(zkDev, zkPOneDev);
+    if(itr == maxIterations_-1){
+      this->nOfIterations = this->maxIterations_;
+    }
   }
 
   // convert back to the vector x of what xDev has been
@@ -217,6 +224,7 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
   for (std::size_t i = 0; i < n; ++i) {
     x[static_cast<Eigen::Index>(i)] = xResult[i];
   }
+  // this->nOfIterations = this->maxIterations_;
   //--------------------------clean up----------------
   delete xDev;
   delete bDev;
@@ -238,4 +246,8 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
   delete rhoNewDev;
 }
 
+std::size_t CGSolver::getNbOfIterations() const{
+
+  return this->nOfIterations;
+}
 } // namespace gpuSolver

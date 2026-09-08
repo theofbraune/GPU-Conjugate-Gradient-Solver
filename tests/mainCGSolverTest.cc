@@ -1,5 +1,7 @@
 #include <GPUSolver/CGSolver.h>
 #include <GPUSolver/Preconditioners/IdentityPreconditioner.h>
+#include <GPUSolver/Preconditioners/MetalJacobiPreconditioner.h>
+#include <GPUSolver/Preconditioners/DampedJacobiPreconditioner.h>
 #include <GPUSolver/metal/MetalBackend.h>
 #include <GPUSolver/metal/MetalContext.h>
 
@@ -13,167 +15,109 @@
 #include <stdexcept>
 #include <string>
 
+int main(int argc, char *argv[]) {
+  // --------------------------------------------------------
+  // 1. Pick mesh.
+  // --------------------------------------------------------
 
-int main(int argc, char* argv[])
-{
-    // --------------------------------------------------------
-    // 1. Pick mesh.
-    // --------------------------------------------------------
+  const std::string projectSource = std::string(PROJECT_SOURCE_DIR);
 
-    const std::string projectSource =
-        std::string(PROJECT_SOURCE_DIR);
+  std::string meshPath;
 
-    std::string meshPath;
+  if (argc > 1) {
+    meshPath = std::string(argv[1]);
+  } else {
+    meshPath = projectSource + "/data/surfaceMeshes/david140k.obj";
+  }
 
-    if (argc > 1)
-    {
-        meshPath =
-            std::string(argv[1]);
-    }
-    else
-    {
-        meshPath =
-            projectSource
-            + "/data/surfaceMeshes/david140k.obj";
-    }
+  // --------------------------------------------------------
+  // 2. Load triangle mesh.
+  // --------------------------------------------------------
 
+  Eigen::MatrixXf V;
+  Eigen::MatrixXi F;
 
-    // --------------------------------------------------------
-    // 2. Load triangle mesh.
-    // --------------------------------------------------------
+  if (!igl::read_triangle_mesh(meshPath, V, F)) {
+    throw std::runtime_error("Could not load triangle mesh.");
+  }
 
-    Eigen::MatrixXf V;
-    Eigen::MatrixXi F;
+  std::cout << "Rows of V: " << V.rows() << " x " << V.cols() << '\n';
 
-    if (!igl::read_triangle_mesh(
-            meshPath,
-            V,
-            F))
-    {
-        throw std::runtime_error(
-            "Could not load triangle mesh."
-        );
-    }
+  std::cout << "Rows of F: " << F.rows() << " x " << F.cols() << "\n\n";
 
-    std::cout
-        << "Rows of V: "
-        << V.rows()
-        << " x "
-        << V.cols()
-        << '\n';
+  // --------------------------------------------------------
+  // 3. Construct cotangent Laplacian.
+  // --------------------------------------------------------
 
-    std::cout
-        << "Rows of F: "
-        << F.rows()
-        << " x "
-        << F.cols()
-        << "\n\n";
+  Eigen::SparseMatrix<float> columnMajorLaplacian;
 
+  igl::cotmatrix(V, F, columnMajorLaplacian);
 
-    // --------------------------------------------------------
-    // 3. Construct cotangent Laplacian.
-    // --------------------------------------------------------
+  // CGSolver expects row-major sparse storage.
+  using Matrix = gpuSolver::CGSolver::Matrix;
 
-    Eigen::SparseMatrix<float> columnMajorLaplacian;
+  Matrix A = columnMajorLaplacian;
 
-    igl::cotmatrix(
-        V,
-        F,
-        columnMajorLaplacian
-    );
+  A.makeCompressed();
 
+  std::cout << "Matrix statistics\n"
+            << "-----------------\n"
+            << "Rows:      " << A.rows() << '\n'
+            << "Cols:      " << A.cols() << '\n'
+            << "NNZ:       " << A.nonZeros() << '\n'
+            << "NNZ / row: "
+            << static_cast<double>(A.nonZeros()) / static_cast<double>(A.rows())
+            << "\n\n";
 
-    // CGSolver expects row-major sparse storage.
-    using Matrix =
-        gpuSolver::CGSolver::Matrix;
+  // --------------------------------------------------------
+  // 4. Create GPU infrastructure.
+  // --------------------------------------------------------
 
-    Matrix A =
-        columnMajorLaplacian;
+  gpuSolver::MetalContext context;
 
-    A.makeCompressed();
+  gpuSolver::MetalBackend backend(context);
 
+  // --------------------------------------------------------
+  // 5. Create first preconditioner.
+  //
+  // Identity means:
+  //
+  //     M^-1 r = r
+  //
+  // --------------------------------------------------------
+  std::size_t nRows = std::size_t(V.rows());
 
-    std::cout
-        << "Matrix statistics\n"
-        << "-----------------\n"
-        << "Rows:      "
-        << A.rows()
-        << '\n'
-        << "Cols:      "
-        << A.cols()
-        << '\n'
-        << "NNZ:       "
-        << A.nonZeros()
-        << '\n'
-        << "NNZ / row: "
-        << static_cast<double>(
-               A.nonZeros()
-           )
-           / static_cast<double>(
-               A.rows()
-           )
-        << "\n\n";
+  float *diagonalValues = new float[nRows];
+  for (int i = 0; i < nRows; i++) {
+    diagonalValues[i] = A.coeff(i, i);
+  }
 
+  // gpuSolver::IdentityPreconditioner preconditioner;
+  // gpuSolver::MetalJacobiPreconditioner preconditioner =
+  //     gpuSolver::MetalJacobiPreconditioner();
 
-    // --------------------------------------------------------
-    // 4. Create GPU infrastructure.
-    // --------------------------------------------------------
+  gpuSolver::DampedJacobiPreconditioner preconditioner =
+      gpuSolver::DampedJacobiPreconditioner(3,0.9f);
 
-    gpuSolver::MetalContext context;
+  // --------------------------------------------------------
+  // 6. Construct CG solver.
+  //
+  // We do NOT solve anything yet.
+  // This only tests the object/data setup.
+  // --------------------------------------------------------
 
-    gpuSolver::MetalBackend backend(
-        context
-    );
+  gpuSolver::CGSolver solver(backend, preconditioner, A);
 
+  solver.setMaxIterations(1000);
 
-    // --------------------------------------------------------
-    // 5. Create first preconditioner.
-    //
-    // Identity means:
-    //
-    //     M^-1 r = r
-    //
-    // --------------------------------------------------------
+  solver.setTolerance(1e-6f);
 
-    gpuSolver::IdentityPreconditioner preconditioner;
+  std::cout << "CG solver constructed successfully.\n";
 
+  std::cout << "Maximum iterations: " << solver.maxIterations() << '\n';
 
-    // --------------------------------------------------------
-    // 6. Construct CG solver.
-    //
-    // We do NOT solve anything yet.
-    // This only tests the object/data setup.
-    // --------------------------------------------------------
+  std::cout << "Tolerance: " << solver.tolerance() << '\n';
 
-    gpuSolver::CGSolver solver(
-        backend,
-        preconditioner,
-        A
-    );
-
-
-    solver.setMaxIterations(
-        1000
-    );
-
-    solver.setTolerance(
-        1e-6f
-    );
-
-
-    std::cout
-        << "CG solver constructed successfully.\n";
-
-    std::cout
-        << "Maximum iterations: "
-        << solver.maxIterations()
-        << '\n';
-
-    std::cout
-        << "Tolerance: "
-        << solver.tolerance()
-        << '\n';
-
-
-    return 0;
+  delete [] diagonalValues;
+  return 0;
 }

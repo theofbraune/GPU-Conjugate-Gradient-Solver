@@ -34,7 +34,9 @@ struct MetalBackend::Impl {
   MetalContext &context;
   MTL::ComputePipelineState *scalePipeline = nullptr;
   MTL::ComputePipelineState *vectorCopyPipeline = nullptr;
+  MTL::ComputePipelineState *setZeroPipeline = nullptr;
   MTL::ComputePipelineState *scalePipelineDevice = nullptr;
+  MTL::ComputePipelineState *scaleVectorByVectorPipeline = nullptr;
   MTL::ComputePipelineState *axpyPipeline = nullptr;
   MTL::ComputePipelineState *axpyPipelineDevice = nullptr;
   MTL::ComputePipelineState *spmvPipeline = nullptr;
@@ -167,6 +169,12 @@ MetalBackend::MetalBackend(MetalContext &context) {
 
   impl_->scalarSqrtPipeline =
       makePipeline(context.device(), context.library(), "scalarSqrt");
+
+  impl_->scaleVectorByVectorPipeline =
+      makePipeline(context.device(), context.library(), "scaleVectorByVector");
+
+  impl_->setZeroPipeline =
+      makePipeline(context.device(), context.library(), "setZero");
 }
 
 MetalBackend::~MetalBackend() {
@@ -239,6 +247,14 @@ MetalBackend::~MetalBackend() {
     impl_->vectorCopyPipeline->release();
   }
 
+  if (impl_->scaleVectorByVectorPipeline) {
+    impl_->scaleVectorByVectorPipeline->release();
+  }
+
+  if(impl_->setZeroPipeline){
+    impl_->setZeroPipeline->release();
+  }
+
   delete impl_;
 }
 
@@ -278,6 +294,17 @@ void MetalBackend::encodeScaleMetal(MTL::ComputeCommandEncoder *encoder,
   dispatch1D(encoder, impl_->scalePipeline, x.size());
 }
 
+void MetalBackend::encodeSetZeroMetal(MTL::ComputeCommandEncoder *encoder,
+                                      DeviceVector &input) {
+
+  encoder->setComputePipelineState(impl_->setZeroPipeline);
+
+  encoder->setBuffer(input.getNativeBuffer(), 0, 0);
+
+  dispatch1D(encoder, impl_->setZeroPipeline, input.size());
+
+}
+
 void MetalBackend::encodeScaleMetal(MTL::ComputeCommandEncoder *encoder,
                                     DeviceVector &x,
                                     const DeviceScalar &alpha) {
@@ -291,8 +318,27 @@ void MetalBackend::encodeScaleMetal(MTL::ComputeCommandEncoder *encoder,
   dispatch1D(encoder, impl_->scalePipelineDevice, x.size());
 }
 
+void MetalBackend::encodeScaleVectorMetal(MTL::ComputeCommandEncoder *encoder,
+                                          const DeviceVector &scaleVector,
+                                          DeviceVector &output) {
+  if (scaleVector.size() != output.size()) {
+    throw std::runtime_error(
+        "MetalBackend::encodeScaleVector: scaleVector and output sizes do "
+        "not match.");
+  }
+  encoder->setComputePipelineState(impl_->scaleVectorByVectorPipeline);
+  encoder->setBuffer(scaleVector.getNativeBuffer(), 0, 0);
+  encoder->setBuffer(output.getNativeBuffer(), 0, 1);
+
+  dispatch1D(encoder, impl_->scaleVectorByVectorPipeline, scaleVector.size());
+}
 void MetalBackend::encodeCopyMetal(MTL::ComputeCommandEncoder *encoder,
                                    const DeviceVector &x, DeviceVector &xCopy) {
+  if (x.size() != xCopy.size()) {
+    throw std::runtime_error(
+        "MetalBackend::encodeCopy: source and destination sizes do not "
+        "match.");
+  }
   encoder->setComputePipelineState(impl_->vectorCopyPipeline);
 
   encoder->setBuffer(x.getNativeBuffer(), 0, 0);
@@ -619,6 +665,13 @@ void MetalBackend::encodeScale(BackendEncoder &encoder, DeviceVector &x,
   encodeScaleMetal(metalEncoder.encoder_, x, scalar);
 }
 
+void MetalBackend::encodeScaleVector(BackendEncoder &encoder,
+                                     const DeviceVector &scaleVector,
+                                     DeviceVector &output) {
+  MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
+  this->encodeScaleVectorMetal(metalEncoder.encoder_, scaleVector, output);
+}
+
 void MetalBackend::encodeCopy(BackendEncoder &encoder, const DeviceVector &x,
                               DeviceVector &xCopy) {
 
@@ -705,6 +758,12 @@ void MetalBackend::encodeScalarNegate(BackendEncoder &encoder,
   encodeScalarNegateMetal(metalEncoder.encoder_, input, output);
 }
 
+void MetalBackend::encodeSetZero(BackendEncoder& encoder, DeviceVector& input) {
+
+  MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
+
+  encodeSetZeroMetal(metalEncoder.encoder_, input);
+}
 void MetalBackend::encodeScalarSqrt(BackendEncoder &encoder,
                                     const DeviceScalar &input,
                                     DeviceScalar &output) {
@@ -945,6 +1004,16 @@ void MetalBackend::spmvRepeated(const DeviceELLMatrix &A, const DeviceVector &x,
   // commandBuffer->waitUntilCompleted();
 }
 
+
+
+void MetalBackend::scaleVectorByVector(const DeviceVector &scaleVector,
+                                       DeviceVector &output) {
+  BackendEncoder *encoder = createEncoder();
+  encodeScaleVector(*encoder, scaleVector, output);
+  this->submitAndWait(*encoder);
+  delete encoder;
+}
+
 void MetalBackend::dot(const DeviceVector &x, const DeviceVector &y,
                        DeviceScalar &result) {
 
@@ -1096,16 +1165,14 @@ DeviceVector *MetalBackend::createVector(std::size_t size,
 }
 
 DeviceScalar *MetalBackend::createScalar() {
-  DeviceScalar* devSca = new DeviceScalar(this->impl_->context);
+  DeviceScalar *devSca = new DeviceScalar(this->impl_->context);
 
   return devSca;
-
 }
 
 DeviceScalar *MetalBackend::createScalar(float value) {
-  DeviceScalar* devSca = new DeviceScalar(this->impl_->context, value);
+  DeviceScalar *devSca = new DeviceScalar(this->impl_->context, value);
   return devSca;
-
 }
 
 } // namespace gpuSolver

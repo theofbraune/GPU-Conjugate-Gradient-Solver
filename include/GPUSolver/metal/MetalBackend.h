@@ -58,6 +58,12 @@ private:
                       const DeviceVector &x, const DeviceVector &y,
                       DeviceScalar &result);
 
+  void encodeScaleVectorMetal(MTL::ComputeCommandEncoder *encoder, const DeviceVector &scaleVector,
+                                 DeviceVector &output);
+
+  // void encodeSetZero(BackendEncoder& encoder, DeviceVector& input) override;
+  void encodeSetZeroMetal(MTL::ComputeCommandEncoder *encoder, DeviceVector &input);
+
   void encodeScaleMetal(MTL::ComputeCommandEncoder *encoder, DeviceVector &x,
                         float scalar);
 
@@ -124,11 +130,16 @@ public:
   // They do NOT submit and do NOT synchronize.
   // ========================================================
 
+  void encodeSetZero(BackendEncoder& encoder, DeviceVector& input) override;
+
   void encodeScale(BackendEncoder &encoder, DeviceVector &x,
                    float scalar) override;
 
   void encodeScale(BackendEncoder &encoder, DeviceVector &x,
                    const DeviceScalar &scalar) override;
+
+  void encodeScaleVector(BackendEncoder &encoder, const DeviceVector &scaleVector,
+                                 DeviceVector &output) override;
 
   void encodeCopy(BackendEncoder &encoder, const DeviceVector &x,
                   DeviceVector &xCopy) override;
@@ -189,6 +200,8 @@ public:
   void scale(DeviceVector &x, float scalar) override;
 
   void scale(DeviceVector &x, const DeviceScalar &scalar) override;
+
+  void scaleVectorByVector(const DeviceVector& scaleVector, DeviceVector& output) override;
 
   void axpy(float alpha, const DeviceVector &x, DeviceVector &y) override;
 

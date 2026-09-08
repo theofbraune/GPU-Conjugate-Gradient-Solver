@@ -35,6 +35,7 @@ private:
 
     std::size_t maxIterations_;
     float tolerance_;
+    std::size_t nOfIterations = 0;
 
 
 public:
@@ -63,6 +64,8 @@ public:
     );
 
     std::size_t maxIterations() const;
+
+    std::size_t getNbOfIterations() const;
 
     float tolerance() const;
 

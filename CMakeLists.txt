@@ -89,6 +89,8 @@ if(APPLE)
             src/DeviceELLMatrix.cc
             src/HostELLMatrix.cc
             src/Preconditioners/IdentityPreconditioner.cc
+            src/Preconditioners/MetalJacobiPreconditioner.cc
+            src/Preconditioners/DampedJacobiPreconditioner.cc
     )
 
     target_link_libraries(gpuSolver

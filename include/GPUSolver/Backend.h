@@ -22,7 +22,7 @@ public:
   // handles to create objects
   virtual DeviceVector *createVector(std::size_t size) = 0;
 
-  virtual DeviceVector *createVector(std::size_t size, const float* values) = 0;
+  virtual DeviceVector *createVector(std::size_t size, const float *values) = 0;
 
   virtual DeviceScalar *createScalar() = 0;
 
@@ -42,6 +42,11 @@ public:
 
   virtual void encodeCopy(BackendEncoder &encoder, const DeviceVector &x,
                           DeviceVector &xCopy) = 0;
+
+  virtual void encodeScaleVector(BackendEncoder &encoder, const DeviceVector &scaleVector,
+                                 DeviceVector &output) = 0;
+
+  virtual void encodeSetZero(BackendEncoder& encoder, DeviceVector& input) = 0;
 
   virtual void encodeAxpy(BackendEncoder &encoder, float alpha,
                           const DeviceVector &x, DeviceVector &y) = 0;
@@ -88,6 +93,8 @@ public:
   virtual void scale(DeviceVector &x, float alpha) = 0;
 
   virtual void scale(DeviceVector &x, const DeviceScalar &alpha) = 0;
+
+  virtual void scaleVectorByVector(const DeviceVector& scaleVector, DeviceVector& output) = 0;
 
   virtual void axpy(float alpha, const DeviceVector &x, DeviceVector &y) = 0;
 

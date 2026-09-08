@@ -52,3 +52,18 @@ kernel void vectorCopy(
 ){
   vectorCopy[id] = vectorIn[id];
 }
+
+kernel void scaleVectorByVector(
+  device const float* vectorForScaling[[buffer(0)]],
+  device float* vectorOutput [[buffer(1)]],
+  uint id[[thread_position_in_grid]]
+){
+  vectorOutput[id] = vectorOutput[id] * vectorForScaling[id];
+}
+
+kernel void setZero(
+  device float* vectorIn[[buffer(0)]],
+  uint id[[thread_position_in_grid]]
+){
+  vectorIn[id] = 0.f;
+}
