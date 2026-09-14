@@ -1,2 +1,4 @@
+add_subdirectory(amgSolver)
 add_subdirectory(poissonSurface)
 add_subdirectory(poissonTetmesh)
+add_subdirectory(multigridPoisson)

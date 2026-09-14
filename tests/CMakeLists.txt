@@ -77,6 +77,22 @@ target_compile_definitions(laplacianTestCG
     PRIVATE
         PROJECT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
+
+include(polyscope)
+add_executable(laplacianAMG
+  mainMGCGCheck.cc
+)
+target_link_libraries(laplacianAMG
+  PRIVATE 
+  gpuSolver::gpuSolver
+  igl::core
+  polyscope::polyscope
+)
+
+target_compile_definitions(laplacianAMG
+    PRIVATE
+        PROJECT_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+)
 if(APPLE)
   add_subdirectory(metal)
 endif()
