@@ -86,11 +86,14 @@ if(APPLE)
             src/Permutation.cc 
             src/ReorderingStrategies/IdentityReordering.cc
             src/ReorderingStrategies/RCMReordering.cc
+            src/AMGHierarchy.cc
             src/DeviceELLMatrix.cc
             src/HostELLMatrix.cc
             src/Preconditioners/IdentityPreconditioner.cc
             src/Preconditioners/MetalJacobiPreconditioner.cc
             src/Preconditioners/DampedJacobiPreconditioner.cc
+            src/SparseMatrixUtils.cc
+            src/Preconditioners/MultigridDampedJacobiPreconditioner.cc
     )
 
     target_link_libraries(gpuSolver

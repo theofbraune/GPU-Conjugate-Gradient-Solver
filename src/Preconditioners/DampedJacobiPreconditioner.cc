@@ -87,13 +87,12 @@ DampedJacobiPreconditioner::~DampedJacobiPreconditioner() {
   delete correction_;
 }
 
-void DampedJacobiPreconditioner::apply(Backend &backend,
-                                       BackendEncoder &encoder,
-                                       const DeviceVector &residual,
-                                       DeviceVector &z) {
+void DampedJacobiPreconditioner::smooth(Backend &backend,
+                                        BackendEncoder &encoder,
+                                        const DeviceVector &residual,
+                                        DeviceVector &z, std::size_t iters) {
 
-  backend.encodeSetZero(encoder, z);
-  for (std::size_t i = 0; i < this->smoothingSteps_; i++) {
+  for (std::size_t i = 0; i < iters; i++) {
 
     backend.encodeSpmv(encoder, *matrix_, z, *Az_);
 
@@ -105,5 +104,14 @@ void DampedJacobiPreconditioner::apply(Backend &backend,
 
     backend.encodeAxpy(encoder, this->omega_, *correction_, z);
   }
+}
+
+void DampedJacobiPreconditioner::apply(Backend &backend,
+                                       BackendEncoder &encoder,
+                                       const DeviceVector &residual,
+                                       DeviceVector &z) {
+
+  backend.encodeSetZero(encoder, z);
+  this->smooth(backend, encoder, residual, z, this->smoothingSteps_);
 }
 } // namespace gpuSolver

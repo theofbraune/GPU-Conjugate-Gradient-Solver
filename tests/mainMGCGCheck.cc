@@ -1,4 +1,3 @@
-
 #include <GPUSolver/CGSolver.h>
 #include <GPUSolver/Preconditioners/MetalJacobiPreconditioner.h>
 #include <GPUSolver/Preconditioners/DampedJacobiPreconditioner.h>

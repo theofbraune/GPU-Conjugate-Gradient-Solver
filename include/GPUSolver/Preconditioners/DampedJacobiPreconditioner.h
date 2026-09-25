@@ -21,6 +21,9 @@ public:
   void apply(Backend &backend, BackendEncoder &encoder,
              const DeviceVector &residual, DeviceVector &z) override;
 
+  void smooth(Backend &backend, BackendEncoder &encoder,
+             const DeviceVector &residual, DeviceVector &z, std::size_t iters);
+
   DampedJacobiPreconditioner() = delete;
   DampedJacobiPreconditioner(const std::size_t nSmoother, const float weight);
   

@@ -28,3 +28,5 @@ target_link_libraries(gpuSolverAMG
 )
 
 target_compile_features(gpuSolverAMG PUBLIC cxx_std_17)
+
+add_subdirectory(tests)

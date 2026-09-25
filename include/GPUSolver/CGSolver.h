@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GPUSolver/BackendEncoder.h"
+#include <GPUSolver/Permutation.h>
 #include <Eigen/Core>
 #include <Eigen/Sparse>
 
@@ -28,6 +29,8 @@ private:
     Backend& backend_;
     Preconditioner& preconditioner_;
 
+    const Permutation* permutation_ = nullptr;
+
     Matrix matrix_;
 
     HostCSRMatrix* hostMatrix_;
@@ -43,6 +46,13 @@ public:
         Backend& backend,
         Preconditioner& preconditioner,
         const Matrix& matrix
+    );
+
+    CGSolver(
+        Backend& backend,
+        Preconditioner& preconditioner,
+        const Matrix& matrix,
+        const Permutation& permutationForMatrix
     );
 
     ~CGSolver();

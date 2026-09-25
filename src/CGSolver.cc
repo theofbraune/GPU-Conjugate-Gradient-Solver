@@ -1,4 +1,5 @@
 #include "GPUSolver/DeviceVector.h"
+#include "GPUSolver/Permutation.h"
 #include <GPUSolver/Backend.h>
 #include <GPUSolver/BackendEncoder.h>
 #include <GPUSolver/CGSolver.h>
@@ -6,6 +7,8 @@
 #include <GPUSolver/DeviceSparseMatrix.h>
 #include <GPUSolver/HostSparseMatrix.h>
 #include <GPUSolver/Preconditioner.h>
+#include <cstddef>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -26,12 +29,39 @@ CGSolver::CGSolver(Backend &backend, Preconditioner &preconditioner,
 
   matrix_.makeCompressed();
 
-
   this->hostMatrix_ = new HostCSRMatrix(
       static_cast<std::size_t>(matrix_.rows()),
       static_cast<std::size_t>(matrix_.cols()),
       static_cast<std::size_t>(matrix_.nonZeros()), matrix_.outerIndexPtr(),
       matrix_.innerIndexPtr(), matrix_.valuePtr());
+
+  this->deviceMatrix_ = this->backend_.createCSRMatrix(*hostMatrix_);
+
+  this->preconditioner_.initialize(backend, *hostMatrix_, *deviceMatrix_);
+}
+
+CGSolver::CGSolver(Backend &backend, Preconditioner &preconditioner,
+                   const Matrix &matrix, const Permutation &permutationMatrix)
+    : backend_(backend), preconditioner_(preconditioner), matrix_(matrix),
+      hostMatrix_(nullptr), deviceMatrix_(nullptr), maxIterations_(1000),
+      tolerance_(1e-6f) {
+  if (matrix_.rows() == 0 || matrix_.cols() == 0) {
+    throw std::runtime_error("CGSolver: matrix must be non-empty.");
+  }
+
+  if (matrix_.rows() != matrix_.cols()) {
+    throw std::runtime_error("CGSolver: matrix must be square.");
+  }
+
+  this->permutation_ = &permutationMatrix;
+
+  matrix_.makeCompressed();
+
+  this->hostMatrix_ = new HostCSRMatrix(
+      static_cast<std::size_t>(matrix_.rows()),
+      static_cast<std::size_t>(matrix_.cols()),
+      static_cast<std::size_t>(matrix_.nonZeros()), matrix_.outerIndexPtr(),
+      matrix_.innerIndexPtr(), matrix_.valuePtr(), permutationMatrix);
 
   this->deviceMatrix_ = this->backend_.createCSRMatrix(*hostMatrix_);
 
@@ -65,6 +95,20 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
     throw std::runtime_error(
         "CGSolver::solve: initial guess size does not match matrix.");
   }
+  Eigen::VectorXf bPermuted = b;
+  Eigen::VectorXf xPermuted = x;
+  if (this->permutation_) {
+    const int *newToOld = this->permutation_->newToOld();
+    int size = this->permutation_->size();
+    if (size != x.size() || size != b.size()) {
+      throw std::runtime_error(
+          " the permutation is incompatible with the passed vectors");
+    }
+    for (std::size_t i = 0; i < x.size(); i++) {
+      bPermuted(i) = b(newToOld[i]);
+      xPermuted(i) = x(newToOld[i]);
+    }
+  }
   const float rhsNorm = b.norm();
   constexpr float rhsZeroTolerance = 1e-12f;
   if (rhsNorm < rhsZeroTolerance) {
@@ -74,8 +118,8 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
 
   const std::size_t n = static_cast<std::size_t>(b.size());
 
-  float *xDat = x.data();
-  const float *bDat = b.data();
+  float *xDat = xPermuted.data();
+  const float *bDat = bPermuted.data();
 
   DeviceVector *xDev = this->backend_.createVector(n, xDat);
 
@@ -85,7 +129,7 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
 
   DeviceVector *AxDev = this->backend_.createVector(n);
 
-  BackendEncoder* backendEncoder_ = backend_.createEncoder();
+  BackendEncoder *backendEncoder_ = backend_.createEncoder();
   // compute Ax
   this->backend_.encodeSpmv(*backendEncoder_, *deviceMatrix_, *xDev, *AxDev);
 
@@ -182,13 +226,11 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
     backend_.encodeScalarDivide(*backendEncoder_, *normResSqDev, *normRHSSqDev,
                                 *relativeResidualSquaredDev);
 
-
     this->preconditioner_.apply(backend_, *backendEncoder_, *resKpOneDev,
                                 *zkPOneDev);
     // now compute the beta_k scalar
     // first compute the 2 dot products that are needed
-    backend_.encodeDot(*backendEncoder_, *resKpOneDev, *zkPOneDev,
-                       *rhoNewDev);
+    backend_.encodeDot(*backendEncoder_, *resKpOneDev, *zkPOneDev, *rhoNewDev);
 
     backend_.encodeScalarDivide(*backendEncoder_, *rhoNewDev, *rhoDev,
                                 *betaKDev);
@@ -208,12 +250,11 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
       break;
     }
 
-
     // swap the two rho's
     std::swap(rhoDev, rhoNewDev);
     std::swap(resDev, resKpOneDev);
     std::swap(zkDev, zkPOneDev);
-    if(itr == maxIterations_-1){
+    if (itr == maxIterations_ - 1) {
       this->nOfIterations = this->maxIterations_;
     }
   }
@@ -221,8 +262,17 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
   // convert back to the vector x of what xDev has been
   const float *xResult = xDev->download();
 
-  for (std::size_t i = 0; i < n; ++i) {
-    x[static_cast<Eigen::Index>(i)] = xResult[i];
+  // check if we need the permutation
+  // check if we need the permutation
+  if (permutation_ != nullptr) {
+    const int* newToOldPerm = this->permutation_->newToOld();
+    for (std::size_t i = 0; i < n; ++i) {
+      x[static_cast<Eigen::Index>(newToOldPerm[i])] = xResult[i];
+    }
+  } else {
+    for (std::size_t i = 0; i < n; ++i) {
+      x[static_cast<Eigen::Index>(i)] = xResult[i];
+    }
   }
   // this->nOfIterations = this->maxIterations_;
   //--------------------------clean up----------------
@@ -246,8 +296,5 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
   delete rhoNewDev;
 }
 
-std::size_t CGSolver::getNbOfIterations() const{
-
-  return this->nOfIterations;
-}
+std::size_t CGSolver::getNbOfIterations() const { return this->nOfIterations; }
 } // namespace gpuSolver

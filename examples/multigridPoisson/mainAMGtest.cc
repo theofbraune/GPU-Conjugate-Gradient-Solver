@@ -5,6 +5,7 @@
 #include <GPUSolver/metal/MetalContext.h>
 #include <AMGUtils/AMGHierarchyBuilder.h>
 
+#include <cstddef>
 #include <igl/cotmatrix.h>
 #include <igl/grad.h>
 #include <igl/read_triangle_mesh.h>
@@ -191,6 +192,10 @@ int main(int argc, char **argv) {
   A.makeCompressed();
 
   std::vector<Matrix> restrictionOperators = MGBuilder::buildRestrictionMatricesSmoothedAggregation(A,1,0.01f,10000);
+  std::size_t preSmooth = 2;
+  std::size_t postSmooth = 2;
+  float omega = 0.7f;
+  
 
   std::cout<<" The vector of the restriction matrices is of size "<<restrictionOperators.size()<<std::endl;
   for(Matrix matrix_: restrictionOperators){
