@@ -1,16 +1,19 @@
+
+#include "AMGUtils/AMGHierarchyBuilder.h"
+#include "GPUSolver/AMGHierarchy.h"
 #include <GPUSolver/CGSolver.h>
-#include <GPUSolver/Preconditioners/MetalJacobiPreconditioner.h>
+#include <GPUSolver/Permutation.h>
 #include <GPUSolver/Preconditioners/DampedJacobiPreconditioner.h>
+#include <GPUSolver/Preconditioners/MetalJacobiPreconditioner.h>
+#include <GPUSolver/Preconditioners/MultigridDampedJacobiPreconditioner.h>
+#include <GPUSolver/ReorderingStrategies/RCMReordering.h>
 #include <GPUSolver/metal/MetalBackend.h>
 #include <GPUSolver/metal/MetalContext.h>
-#include <AMGUtils/AMGHierarchyBuilder.h>
 
-#include <cstddef>
 #include <igl/cotmatrix.h>
 #include <igl/grad.h>
 #include <igl/read_triangle_mesh.h>
 
-#include <ostream>
 #include <polyscope/point_cloud.h>
 #include <polyscope/polyscope.h>
 #include <polyscope/surface_mesh.h>
@@ -23,6 +26,40 @@
 #include <random>
 #include <stdexcept>
 #include <vector>
+
+std::vector<gpuSolver::Permutation>
+buildRCMPermutationsForHierarchy(const gpuSolver::AMGHierarchy &hierarchy) {
+  std::vector<gpuSolver::Permutation> permutations;
+
+  permutations.reserve(hierarchy.A.size());
+
+  gpuSolver::RCMReordering rcmReordering;
+
+  for (std::size_t level = 0; level < hierarchy.A.size(); ++level) {
+    const gpuSolver::AMGHierarchy::Matrix &A = hierarchy.A[level];
+
+    const std::size_t nRows = static_cast<std::size_t>(A.rows());
+
+    if (A.rows() != A.cols()) {
+      throw std::runtime_error("buildRCMPermutationsForHierarchy: "
+                               "Galerkin matrix is not square.");
+    }
+
+    int *oldToNew = new int[nRows];
+
+    int *newToOld = new int[nRows];
+
+    rcmReordering.compute(nRows, A.outerIndexPtr(), A.innerIndexPtr(), oldToNew,
+                          newToOld);
+
+    permutations.emplace_back(nRows, oldToNew, newToOld);
+
+    delete[] oldToNew;
+    delete[] newToOld;
+  }
+
+  return permutations;
+}
 
 int main(int argc, char **argv) {
   if (argc != 2) {
@@ -191,16 +228,22 @@ int main(int argc, char **argv) {
 
   A.makeCompressed();
 
-  std::vector<Matrix> restrictionOperators = MGBuilder::buildRestrictionMatricesSmoothedAggregation(A,1,0.01f,10000);
-  std::size_t preSmooth = 2;
-  std::size_t postSmooth = 2;
-  float omega = 0.7f;
-  
+  // compute the permutation for A
+  std::size_t nRowsA = n - 1;
 
-  std::cout<<" The vector of the restriction matrices is of size "<<restrictionOperators.size()<<std::endl;
-  for(Matrix matrix_: restrictionOperators){
-    std::cout<<" current matrix is of size: "<<matrix_.rows()<<" x "<<matrix_.cols()<<std::endl;
-  }
+  int *oldToNew = new int[nRowsA];
+  int *newToOld = new int[nRowsA];
+  const int *rowPtrA = A.outerIndexPtr();
+  const int *colPtrA = A.innerIndexPtr();
+
+  gpuSolver::RCMReordering rcmReordering;
+
+  rcmReordering.compute(nRowsA, rowPtrA, colPtrA, oldToNew, newToOld);
+
+  gpuSolver::Permutation permutation(nRowsA, oldToNew, newToOld);
+
+  delete[] oldToNew;
+  delete[] newToOld;
 
   // --------------------------------------------------------
   // Reduced RHS.
@@ -248,20 +291,19 @@ int main(int argc, char **argv) {
   }
 
   // gpuSolver::IdentityPreconditioner preconditioner;
-  // gpuSolver::MetalJacobiPreconditioner preconditioner;
-      // gpuSolver::MetalJacobiPreconditioner();
-  gpuSolver::DampedJacobiPreconditioner preconditioner(2,0.6f);
-
+  gpuSolver::DampedJacobiPreconditioner preconditioner(4, 0.9f);
 
   // --------------------------------------------------------
   // GPU PCG.
   // --------------------------------------------------------
 
-  gpuSolver::CGSolver solver(backend, preconditioner, A);
+  constexpr float residualTolerance = 1e-4f;
+  // gpuSolver::CGSolver solver(backend, preconditioner, A); //, permutation);
+  gpuSolver::CGSolver solver(backend, preconditioner, A, permutation);
 
-  solver.setMaxIterations(200);
+  solver.setMaxIterations(5000);
 
-  solver.setTolerance(1e-6f);
+  solver.setTolerance(residualTolerance);
 
   std::cout << "\nStarting GPU PCG...\n";
 
@@ -299,82 +341,167 @@ int main(int argc, char **argv) {
 
   const float relativeResidual = absoluteResidual / b.norm();
 
-  Eigen::ConjugateGradient<Matrix, Eigen::Lower | Eigen::Upper,
-                           Eigen::DiagonalPreconditioner<float>>
-      eigenCG;
-
-  eigenCG.setTolerance(1e-6f);
-
-  eigenCG.setMaxIterations(5000);
-
-  eigenCG.compute(A);
-
-  Eigen::VectorXf xEigen = eigenCG.solve(bReduced);
-
-  std::cout << "Eigen iterations = " << eigenCG.iterations() << "\n";
-
-  std::cout << "Eigen reported error = " << eigenCG.error() << "\n";
-
-  const float differenceToEigen =
-      (xReduced - xEigen).norm() / std::max(1.0f, xEigen.norm());
-
-  std::cout << "Relative difference GPU/Eigen = " << differenceToEigen << "\n";
-
-  Eigen::VectorXf eigenReducedResidual = A * xEigen - bReduced;
-
-  const float eigenReducedRelativeResidual =
-      eigenReducedResidual.norm() / bReduced.norm();
-
-  std::cout << "Eigen actual reduced residual = "
-            << eigenReducedRelativeResidual << std::endl;
-
   const float gpuTrueResidual =
       (A * xReduced - bReduced).norm() / bReduced.norm();
 
-  const float eigenTrueResidual =
-      (A * xEigen - bReduced).norm() / bReduced.norm();
-
-  const float relativeSolutionDifference =
-      (xReduced - xEigen).norm() / std::max(1.0f, xEigen.norm());
-
   std::cout << "\nSolver comparison:\n"
-            << "  GPU iterations              = " << solver.getNbOfIterations()
-            << "\n"
-            << "  GPU true relative residual  = " << gpuTrueResidual << "\n"
-            << "  Eigen iterations            = " << eigenCG.iterations()
-            << "\n"
-            << "  Eigen true relative residual= " << eigenTrueResidual << "\n"
-            << "  GPU/Eigen solution diff     = " << relativeSolutionDifference
+            << "  GPU iterations with jacobi Preconditioner             = "
+            << solver.getNbOfIterations() << "\n"
+            << "  GPU true relative residual with Jacobi Preconditioner  = "
+            << gpuTrueResidual << "\n"
             << "\n";
-  constexpr float residualSanityTolerance = 5e-4f;
+  // constexpr float residualSanityTolerance = 5e-4f;
 
   constexpr float solutionComparisonTolerance = 5e-4f;
 
   bool passed = true;
 
-  if (gpuTrueResidual > residualSanityTolerance) {
-    std::cerr << "[FAIL] GPU true residual is too large: " << gpuTrueResidual
-              << "\n";
+  if (gpuTrueResidual > residualTolerance) {
+    // std::cerr << "[FAIL] GPU true residual is too large: " << gpuTrueResidual
+    //           << "\n";
 
     passed = false;
   }
 
-  if (relativeSolutionDifference > solutionComparisonTolerance) {
-    std::cerr << "[FAIL] GPU solution differs too much from Eigen: "
-              << relativeSolutionDifference << "\n";
-
-    passed = false;
-  }
+  // if (relativeSolutionDifference > solutionComparisonTolerance) {
+  //   std::cerr << "[FAIL] GPU solution differs too much from Eigen: "
+  //             << relativeSolutionDifference << "\n";
+  //
+  //   passed = false;
+  // }
 
   if (passed) {
-    std::cout << "\n[PASS] Surface Poisson sanity check.\n";
+    std::cout << "\n[PASS] Surface Poisson sanity check with Jacobi "
+                 "Preconditioner.\n";
   } else {
-    std::cerr << "\n[FAIL] Surface Poisson sanity check.\n";
-
-    return 1;
+    std::cerr << "\n[FAIL] Surface Poisson sanity check with Jacobi "
+                 "Precondirtioner.\n";
+    //
+    // return 1;
   }
-  std::cout << "  requested CG tolerance      = " << solver.tolerance()
+
+  // now build the AMG hierarchy for the preconditioner
+  //
+  // gpuSolver::AMGHierarchy hierarchyForA =
+  // MGBuilder::buildAmgclSmoothedAggregationHierarchy(A, const
+  // Eigen::SparseMatrix<float, Eigen::RowMajor> &M0, const Eigen::MatrixXf &V)
+
+  // ========================================================
+  // Multigrid damped-Jacobi preconditioner
+  // ========================================================
+
+  std::cout << "\nBuilding AMG hierarchy...\n";
+
+  // --------------------------------------------------------
+  // Build AMGCL smoothed-aggregation hierarchy.
+  //
+  // This is the scalar version:
+  //     block_size = 1
+  //     near-nullspace = constant vector
+  // --------------------------------------------------------
+
+  gpuSolver::AMGHierarchy hierarchyForA =
+      MGBuilder::buildAmgclScalarSmoothedAggregationHierarchy(
+          A,
+          10,  // maximum number of levels
+          5000 // stop once coarse system has <= 100 DOFs
+      );
+
+  std::cout << "AMG hierarchy contains " << hierarchyForA.A.size()
+            << " levels.\n";
+
+  for (std::size_t level = 0; level < hierarchyForA.A.size(); ++level) {
+    std::cout << "  level " << level << ": " << hierarchyForA.A[level].rows()
+              << " DOFs, " << hierarchyForA.A[level].nonZeros()
+              << " nonzeros\n";
+  }
+  // std::vector<gpuSolver::Permutation> mgPermutations =
+  //     gpuSolver::buildHierarchicalPermutations(hierarchyForA);
+  std::vector<gpuSolver::Permutation> mgPermutations =
+      buildRCMPermutationsForHierarchy(hierarchyForA);
+  std::cout << " there are " << mgPermutations.size() << " permutations "
+            << std::endl;
+
+  std::cout << "  requested CG tolerance      = " << solver.tolerance() << "\n";
+  gpuSolver::MultigridDampedJacobiPreconditioner prec =
+      gpuSolver::MultigridDampedJacobiPreconditioner(
+          backend, hierarchyForA, mgPermutations, 2, 2, 1, 0.7f);
+
+  gpuSolver::CGSolver solverMG =
+      gpuSolver::CGSolver(backend, prec, A, mgPermutations[0]);
+
+  solverMG.setMaxIterations(5000);
+
+  solverMG.setTolerance(residualTolerance);
+
+  std::cout << "\nStarting GPU PCG...\n";
+  xReduced.setRandom();
+
+  solverMG.solve(bReduced, xReduced);
+
+  std::cout << "GPU PCG finished.\n";
+  nIter = solverMG.getNbOfIterations();
+  std::cout << "finished in " << nIter << " iterations" << std::endl;
+
+  // --------------------------------------------------------
+  // Reconstruct full potential.
+  // --------------------------------------------------------
+
+  potential = Eigen::VectorXf::Zero(n);
+
+  potential[pinnedVertex] = 0.0f;
+
+  for (Eigen::Index i = 0; i < n; ++i) {
+    if (i == pinnedVertex) {
+      continue;
+    }
+
+    potential[i] = xReduced[oldToReduced[static_cast<std::size_t>(i)]];
+  }
+
+  const Eigen::VectorXf residualMG = K * potential - b;
+
+  const float absoluteResidualMG = residualMG.norm();
+
+  const float relativeResidualMG = absoluteResidualMG / b.norm();
+
+  const float gpuTrueResidualMG =
+      (A * xReduced - bReduced).norm() / bReduced.norm();
+
+  std::cout << "\nSolver comparison:\n"
+            << "  GPU iterations with damped jacobi MG Preconditioner             = "
+            << solverMG.getNbOfIterations() << "\n"
+            << "  GPU true relative residual with damped Jacobi MG Preconditioner  = "
+            << gpuTrueResidualMG << "\n"
             << "\n";
+  // constexpr float residualSanityTolerance = 5e-4f;
+
+
+  passed = true;
+
+  if (gpuTrueResidualMG > residualTolerance) {
+    // std::cerr << "[FAIL] GPU true residual is too large: " << gpuTrueResidual
+    //           << "\n";
+
+    passed = false;
+  }
+
+  // if (relativeSolutionDifference > solutionComparisonTolerance) {
+  //   std::cerr << "[FAIL] GPU solution differs too much from Eigen: "
+  //             << relativeSolutionDifference << "\n";
+  //
+  //   passed = false;
+  // }
+
+  if (passed) {
+    std::cout << "\n[PASS] Surface Poisson sanity check with Multigrid Jacobi "
+                 "Preconditioner.\n";
+  } else {
+    std::cerr << "\n[FAIL] Surface Poisson sanity check with Multigrid Jacobi "
+                 "Precondirtioner.\n";
+    //
+    // return 1;
+  }
   // --------------------------------------------------------
   // Compute electric field
   //

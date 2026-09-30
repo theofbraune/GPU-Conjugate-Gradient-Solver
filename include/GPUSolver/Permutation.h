@@ -13,6 +13,9 @@ public:
 
   Permutation(const Permutation &) = delete;
   Permutation &operator=(const Permutation &) = delete;
+  Permutation(Permutation &&other) noexcept;
+
+  Permutation &operator=(Permutation &&other) noexcept;
 
   std::size_t size() const;
 

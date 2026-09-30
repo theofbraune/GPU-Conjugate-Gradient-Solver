@@ -15,7 +15,6 @@ class BackendEncoder;
 class DeviceCSRMatrix;
 class DeviceVector;
 class HostCSRMatrix;
-class AMGHierarchy;
 
 class MultigridDampedJacobiPreconditioner : public Preconditioner {
 private:

@@ -6,7 +6,21 @@
 #include <cstddef>
 
 namespace gpuSolver {
+MultigridDampedJacobiPreconditioner::Level::Level()
+    : matrix(nullptr),
+      smoother(nullptr),
+      residual(nullptr),
+      correction(nullptr),
+      Az(nullptr),
+      rhs(nullptr)
+{
+}
 
+MultigridDampedJacobiPreconditioner::Transfer::Transfer()
+    : restriction(nullptr),
+      prolongation(nullptr)
+{
+}
 MultigridDampedJacobiPreconditioner::MultigridDampedJacobiPreconditioner(
     Backend &backend, const AMGHierarchy &hierarchy,
     const std::vector<Permutation> &permutations, std::size_t preSmoothingSteps,

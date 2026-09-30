@@ -22,6 +22,7 @@ target_include_directories(gpuSolverAMG
 
 target_link_libraries(gpuSolverAMG
     PUBLIC
+        gpuSolver::gpuSolver
         Eigen3::Eigen     # public header exposes Eigen types, so this must propagate
     PRIVATE
         amgcl::amgcl      # amgcl only ever appears in the .cc

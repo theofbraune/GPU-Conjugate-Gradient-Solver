@@ -34,6 +34,41 @@ Permutation::Permutation(std::size_t size, const int *oldToNew,
   }
 }
 
+Permutation::Permutation(
+    Permutation&& other) noexcept
+    :
+    size_(other.size_),
+    oldToNew_(other.oldToNew_),
+    newToOld_(other.newToOld_)
+{
+    other.size_ = 0;
+    other.oldToNew_ = nullptr;
+    other.newToOld_ = nullptr;
+}
+
+Permutation&
+Permutation::operator=(
+    Permutation&& other) noexcept
+{
+    if (this == &other)
+    {
+        return *this;
+    }
+
+    delete[] oldToNew_;
+    delete[] newToOld_;
+
+    size_ = other.size_;
+    oldToNew_ = other.oldToNew_;
+    newToOld_ = other.newToOld_;
+
+    other.size_ = 0;
+    other.oldToNew_ = nullptr;
+    other.newToOld_ = nullptr;
+
+    return *this;
+}
+
 Permutation::~Permutation() {
 
   delete[] oldToNew_;
