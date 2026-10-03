@@ -35,24 +35,28 @@
 
 using Clock = std::chrono::steady_clock;
 
-double elapsedMs(Clock::time_point start, Clock::time_point end) {
+double elapsedMs(Clock::time_point start, Clock::time_point end)
+{
   return std::chrono::duration<double, std::milli>(end - start).count();
 }
 
 std::vector<gpuSolver::Permutation>
-buildRCMPermutationsForHierarchy(const gpuSolver::AMGHierarchy &hierarchy) {
+buildRCMPermutationsForHierarchy(const gpuSolver::AMGHierarchy &hierarchy)
+{
   std::vector<gpuSolver::Permutation> permutations;
 
   permutations.reserve(hierarchy.A.size());
 
   gpuSolver::RCMReordering rcmReordering;
 
-  for (std::size_t level = 0; level < hierarchy.A.size(); ++level) {
+  for (std::size_t level = 0; level < hierarchy.A.size(); ++level)
+  {
     const gpuSolver::AMGHierarchy::Matrix &A = hierarchy.A[level];
 
     const std::size_t nRows = static_cast<std::size_t>(A.rows());
 
-    if (A.rows() != A.cols()) {
+    if (A.rows() != A.cols())
+    {
       throw std::runtime_error("buildRCMPermutationsForHierarchy: "
                                "Galerkin matrix is not square.");
     }
@@ -73,8 +77,10 @@ buildRCMPermutationsForHierarchy(const gpuSolver::AMGHierarchy &hierarchy) {
   return permutations;
 }
 
-int main(int argc, char **argv) {
-  if (argc != 2) {
+int main(int argc, char **argv)
+{
+  if (argc != 2)
+  {
     std::cerr << "Usage: surfacePoissonTest mesh.obj\n";
 
     return 1;
@@ -87,13 +93,15 @@ int main(int argc, char **argv) {
   Eigen::MatrixXd V;
   Eigen::MatrixXi F;
 
-  if (!igl::read_triangle_mesh(argv[1], V, F)) {
+  if (!igl::read_triangle_mesh(argv[1], V, F))
+  {
     throw std::runtime_error("Could not load triangle mesh.");
   }
 
   const Eigen::Index n = V.rows();
 
-  if (n < 4) {
+  if (n < 4)
+  {
     throw std::runtime_error("Mesh is too small.");
   }
 
@@ -133,13 +141,15 @@ int main(int argc, char **argv) {
 
   Eigen::Index chargeVertex1 = distribution(generator);
 
-  while (chargeVertex1 == chargeVertex0) {
+  while (chargeVertex1 == chargeVertex0)
+  {
     chargeVertex1 = distribution(generator);
   }
 
   Eigen::Index chargeVertex2 = distribution(generator);
 
-  while (chargeVertex2 == chargeVertex0 || chargeVertex2 == chargeVertex1) {
+  while (chargeVertex2 == chargeVertex0 || chargeVertex2 == chargeVertex1)
+  {
     chargeVertex2 = distribution(generator);
   }
 
@@ -198,8 +208,10 @@ int main(int argc, char **argv) {
 
   Eigen::Index reducedIndex = 0;
 
-  for (Eigen::Index i = 0; i < n; ++i) {
-    if (i == pinnedVertex) {
+  for (Eigen::Index i = 0; i < n; ++i)
+  {
+    if (i == pinnedVertex)
+    {
       continue;
     }
 
@@ -218,13 +230,16 @@ int main(int argc, char **argv) {
 
   triplets.reserve(static_cast<std::size_t>(K.nonZeros()));
 
-  for (Eigen::Index row = 0; row < K.outerSize(); ++row) {
-    for (Matrix::InnerIterator it(K, row); it; ++it) {
+  for (Eigen::Index row = 0; row < K.outerSize(); ++row)
+  {
+    for (Matrix::InnerIterator it(K, row); it; ++it)
+    {
       const Eigen::Index i = it.row();
 
       const Eigen::Index j = it.col();
 
-      if (i == pinnedVertex || j == pinnedVertex) {
+      if (i == pinnedVertex || j == pinnedVertex)
+      {
         continue;
       }
 
@@ -266,8 +281,10 @@ int main(int argc, char **argv) {
 
   Eigen::VectorXf bReduced(n - 1);
 
-  for (Eigen::Index i = 0; i < n; ++i) {
-    if (i == pinnedVertex) {
+  for (Eigen::Index i = 0; i < n; ++i)
+  {
+    if (i == pinnedVertex)
+    {
       continue;
     }
 
@@ -287,6 +304,7 @@ int main(int argc, char **argv) {
   gpuSolver::MetalContext context;
 
   gpuSolver::MetalBackend backend(context);
+  // gpuSolver::CUDABackend backend(context);
 
   // --------------------------------------------------------
   // Jacobi preconditioner.
@@ -298,7 +316,8 @@ int main(int argc, char **argv) {
   std::size_t nRows = std::size_t(V.rows());
 
   float *diagonalValues = new float[nRows - 1];
-  for (int i = 0; i < nRows - 1; i++) {
+  for (int i = 0; i < nRows - 1; i++)
+  {
     diagonalValues[i] = A.coeff(i, i);
   }
 
@@ -341,8 +360,10 @@ int main(int argc, char **argv) {
 
   potential[pinnedVertex] = 0.0f;
 
-  for (Eigen::Index i = 0; i < n; ++i) {
-    if (i == pinnedVertex) {
+  for (Eigen::Index i = 0; i < n; ++i)
+  {
+    if (i == pinnedVertex)
+    {
       continue;
     }
 
@@ -376,7 +397,8 @@ int main(int argc, char **argv) {
 
   bool passed = true;
 
-  if (gpuTrueResidual > residualTolerance) {
+  if (gpuTrueResidual > residualTolerance)
+  {
     // std::cerr << "[FAIL] GPU true residual is too large: " << gpuTrueResidual
     //           << "\n";
 
@@ -390,10 +412,13 @@ int main(int argc, char **argv) {
   //   passed = false;
   // }
 
-  if (passed) {
+  if (passed)
+  {
     std::cout << "\n[PASS] Surface Poisson sanity check with Jacobi "
                  "Preconditioner.\n";
-  } else {
+  }
+  else
+  {
     std::cerr << "\n[FAIL] Surface Poisson sanity check with Jacobi "
                  "Precondirtioner.\n";
     //
@@ -431,7 +456,8 @@ int main(int argc, char **argv) {
   std::cout << "AMG hierarchy contains " << hierarchyForA.A.size()
             << " levels.\n";
 
-  for (std::size_t level = 0; level < hierarchyForA.A.size(); ++level) {
+  for (std::size_t level = 0; level < hierarchyForA.A.size(); ++level)
+  {
     std::cout << "  level " << level << ": " << hierarchyForA.A[level].rows()
               << " DOFs, " << hierarchyForA.A[level].nonZeros()
               << " nonzeros\n";
@@ -486,8 +512,10 @@ int main(int argc, char **argv) {
 
   potential[pinnedVertex] = 0.0f;
 
-  for (Eigen::Index i = 0; i < n; ++i) {
-    if (i == pinnedVertex) {
+  for (Eigen::Index i = 0; i < n; ++i)
+  {
+    if (i == pinnedVertex)
+    {
       continue;
     }
 
@@ -514,7 +542,8 @@ int main(int argc, char **argv) {
 
   passed = true;
 
-  if (gpuTrueResidualMG > residualTolerance) {
+  if (gpuTrueResidualMG > residualTolerance)
+  {
     // std::cerr << "[FAIL] GPU true residual is too large: " << gpuTrueResidual
     //           << "\n";
 
@@ -528,10 +557,13 @@ int main(int argc, char **argv) {
   //   passed = false;
   // }
 
-  if (passed) {
+  if (passed)
+  {
     std::cout << "\n[PASS] Surface Poisson sanity check with Multigrid Jacobi "
                  "Preconditioner.\n";
-  } else {
+  }
+  else
+  {
     std::cerr << "\n[FAIL] Surface Poisson sanity check with Multigrid Jacobi "
                  "Precondirtioner.\n";
     //
@@ -584,9 +616,11 @@ int main(int argc, char **argv) {
 
   potentialGS[pinnedVertex] = 0.0f;
 
-  for (Eigen::Index i = 0; i < n; ++i) {
+  for (Eigen::Index i = 0; i < n; ++i)
+  {
 
-    if (i == pinnedVertex) {
+    if (i == pinnedVertex)
+    {
       continue;
     }
 
@@ -629,10 +663,13 @@ int main(int argc, char **argv) {
   bool passedGS = std::isfinite(gpuTrueResidualGS) &&
                   gpuTrueResidualGS < residualSanityTolerance;
 
-  if (passedGS) {
+  if (passedGS)
+  {
     std::cout << "\n[PASS] Surface Poisson sanity check with "
               << "symmetric Gauss-Seidel Preconditioner.\n";
-  } else {
+  }
+  else
+  {
     std::cerr << "\n[FAIL] Surface Poisson sanity check with "
               << "symmetric Gauss-Seidel Preconditioner.\n";
   }
@@ -702,9 +739,11 @@ int main(int argc, char **argv) {
 
   potentialMGGS[pinnedVertex] = 0.0f;
 
-  for (Eigen::Index i = 0; i < n; ++i) {
+  for (Eigen::Index i = 0; i < n; ++i)
+  {
 
-    if (i == pinnedVertex) {
+    if (i == pinnedVertex)
+    {
       continue;
     }
 
@@ -745,10 +784,13 @@ int main(int argc, char **argv) {
   bool passedMGGS = std::isfinite(gpuTrueResidualMGGS) &&
                     gpuTrueResidualMGGS < residualSanityTolerance;
 
-  if (passedMGGS) {
+  if (passedMGGS)
+  {
     std::cout << "\n[PASS] Surface Poisson sanity check with "
               << "multigrid symmetric Gauss-Seidel Preconditioner.\n";
-  } else {
+  }
+  else
+  {
     std::cerr << "\n[FAIL] Surface Poisson sanity check with "
               << "multigrid symmetric Gauss-Seidel Preconditioner.\n";
   }
@@ -836,7 +878,8 @@ int main(int argc, char **argv) {
 
   Eigen::MatrixXd electricField(F.rows(), 3);
 
-  for (Eigen::Index f = 0; f < F.rows(); ++f) {
+  for (Eigen::Index f = 0; f < F.rows(); ++f)
+  {
     electricField(f, 0) = -gradientFlat[f];
 
     electricField(f, 1) = -gradientFlat[f + F.rows()];

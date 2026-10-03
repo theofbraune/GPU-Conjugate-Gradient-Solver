@@ -23,7 +23,8 @@ kernel void scalarDivide(
   device const float* denominator [[buffer(1)]],
   device float* output [[buffer(2)]]
 ){
-  output[0] = numerator[0]/denominator[0];
+  float denom = denominator[0];
+  output[0] = (denom == 0.0f) ? 0.0f : numerator[0] / denom;
 }
 
 
@@ -48,7 +49,7 @@ kernel void scalarSqrt(
   device const float* input[[buffer(0)]],
   device float* output [[buffer(1)]]
 ){
-  output[0] = sqrt(input[0]);
+   output[0] = sqrt(max(input[0], 0.0f));
 }
 
 

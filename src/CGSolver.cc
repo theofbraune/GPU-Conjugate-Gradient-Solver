@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <stdexcept>
 #include <utility>
+#include <cmath>
 #include <vector>
 
 namespace gpuSolver {
@@ -177,7 +178,9 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
   float firstRes = relativeResidualSquaredDev->download();
   delete backendEncoder_;
   backendEncoder_ = nullptr;
-
+  if (!std::isfinite(firstRes)) {
+    throw std::runtime_error("CGSolver: initial residual is NaN/Inf — check matrix and RHS.");
+  }
   if (firstRes < tolerance_ * tolerance_) {
 
     delete xDev;
@@ -245,6 +248,12 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
     float residualHost = relativeResidualSquaredDev->download();
     delete backendEncoder_;
     backendEncoder_ = nullptr;
+
+    if (!std::isfinite(residualHost)) {
+      // clean up then throw
+      // (same delete block that already exists below)
+      throw std::runtime_error("CGSolver: solver diverged (NaN/Inf residual).");
+    }
     if (residualHost < tolerance_ * tolerance_) {
       this->nOfIterations = itr;
       break;
@@ -265,7 +274,7 @@ void CGSolver::solve(const Eigen::VectorXf &b, Eigen::VectorXf &x) {
   // check if we need the permutation
   // check if we need the permutation
   if (permutation_ != nullptr) {
-    const int* newToOldPerm = this->permutation_->newToOld();
+    const int *newToOldPerm = this->permutation_->newToOld();
     for (std::size_t i = 0; i < n; ++i) {
       x[static_cast<Eigen::Index>(newToOldPerm[i])] = xResult[i];
     }

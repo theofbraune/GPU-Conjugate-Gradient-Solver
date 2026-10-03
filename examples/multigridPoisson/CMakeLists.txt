@@ -13,3 +13,15 @@ target_link_libraries(multigridPoissonExample
         igl::core
         polyscope::polyscope
 )
+
+add_executable(multigridPoissonExampleVolumetric
+  mainTetmeshPoisson.cc
+)
+
+target_link_libraries(multigridPoissonExampleVolumetric
+    PRIVATE
+        gpuSolver::gpuSolver
+        gpuSolverAMG::gpuSolverAMG
+        igl::core
+        polyscope::polyscope
+)

@@ -29,8 +29,7 @@ kernel void gaussSeidelColor(
       sum -= val * x[col];
     }
   }
+  if (diagonal == 0.0f) return;   // skip row — avoids NaN
   float newVal = sum / diagonal;
-  x[row] = (1.0 - omega) * x[row] + omega * newVal;
-
-
+  x[row] = (1.0f - omega) * x[row] + omega * newVal;
 }
