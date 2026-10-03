@@ -1,6 +1,7 @@
 #pragma once
 
 #include "GPUSolver/HostSparseMatrix.h"
+
 namespace gpuSolver {
 
 class Backend;

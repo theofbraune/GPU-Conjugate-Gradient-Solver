@@ -6,6 +6,9 @@
 #include <GPUSolver/Preconditioners/DampedJacobiPreconditioner.h>
 #include <GPUSolver/Preconditioners/MetalJacobiPreconditioner.h>
 #include <GPUSolver/Preconditioners/MultigridDampedJacobiPreconditioner.h>
+#include <GPUSolver/Preconditioners/MultigridGaussSeidelPreconditioner.h>
+#include <GPUSolver/Preconditioners/SymmetricGaussSeidelPreconditioner.h>
+
 #include <GPUSolver/ReorderingStrategies/RCMReordering.h>
 #include <GPUSolver/metal/MetalBackend.h>
 #include <GPUSolver/metal/MetalContext.h>
@@ -22,10 +25,19 @@
 #include <Eigen/Sparse>
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <iomanip>
 #include <iostream>
 #include <random>
 #include <stdexcept>
 #include <vector>
+
+using Clock = std::chrono::steady_clock;
+
+double elapsedMs(Clock::time_point start, Clock::time_point end) {
+  return std::chrono::duration<double, std::milli>(end - start).count();
+}
 
 std::vector<gpuSolver::Permutation>
 buildRCMPermutationsForHierarchy(const gpuSolver::AMGHierarchy &hierarchy) {
@@ -291,7 +303,7 @@ int main(int argc, char **argv) {
   }
 
   // gpuSolver::IdentityPreconditioner preconditioner;
-  gpuSolver::DampedJacobiPreconditioner preconditioner(4, 0.9f);
+  // gpuSolver::DampedJacobiPreconditioner preconditioner(4, 0.9f);
 
   // --------------------------------------------------------
   // GPU PCG.
@@ -299,15 +311,23 @@ int main(int argc, char **argv) {
 
   constexpr float residualTolerance = 1e-4f;
   // gpuSolver::CGSolver solver(backend, preconditioner, A); //, permutation);
-  gpuSolver::CGSolver solver(backend, preconditioner, A, permutation);
-
-  solver.setMaxIterations(5000);
-
-  solver.setTolerance(residualTolerance);
 
   std::cout << "\nStarting GPU PCG...\n";
 
+  const Clock::time_point jacobiSetupStart = Clock::now();
+
+  gpuSolver::DampedJacobiPreconditioner preconditioner(4, 0.9f);
+
+  gpuSolver::CGSolver solver(backend, preconditioner, A, permutation);
+  solver.setMaxIterations(2000);
+  solver.setTolerance(residualTolerance);
+
+  const double jacobiSetupTime = elapsedMs(jacobiSetupStart, Clock::now());
+  const Clock::time_point jacobiSolveStart = Clock::now();
+
   solver.solve(bReduced, xReduced);
+
+  const double jacobiSolveTime = elapsedMs(jacobiSolveStart, Clock::now());
 
   std::cout << "GPU PCG finished.\n";
   std::size_t nIter = solver.getNbOfIterations();
@@ -400,13 +420,14 @@ int main(int argc, char **argv) {
   //     near-nullspace = constant vector
   // --------------------------------------------------------
 
-  gpuSolver::AMGHierarchy hierarchyForA =
-      MGBuilder::buildAmgclScalarSmoothedAggregationHierarchy(
-          A,
-          10,  // maximum number of levels
-          5000 // stop once coarse system has <= 100 DOFs
-      );
+  const Clock::time_point hierarchyStart = Clock::now();
 
+  gpuSolver::AMGHierarchy hierarchyForA =
+      MGBuilder::buildAmgclScalarSmoothedAggregationHierarchy(A, 10, 5000);
+
+  const double hierarchyTime = elapsedMs(hierarchyStart, Clock::now());
+
+  std::cout << "AMG hierarchy construction: " << hierarchyTime << " ms\n";
   std::cout << "AMG hierarchy contains " << hierarchyForA.A.size()
             << " levels.\n";
 
@@ -417,27 +438,41 @@ int main(int argc, char **argv) {
   }
   // std::vector<gpuSolver::Permutation> mgPermutations =
   //     gpuSolver::buildHierarchicalPermutations(hierarchyForA);
+  const Clock::time_point permutationStart = Clock::now();
+
   std::vector<gpuSolver::Permutation> mgPermutations =
       buildRCMPermutationsForHierarchy(hierarchyForA);
+
+  const double permutationTime = elapsedMs(permutationStart, Clock::now());
+
+  std::cout << "AMG permutations: " << permutationTime << " ms\n";
+
   std::cout << " there are " << mgPermutations.size() << " permutations "
             << std::endl;
 
   std::cout << "  requested CG tolerance      = " << solver.tolerance() << "\n";
-  gpuSolver::MultigridDampedJacobiPreconditioner prec =
-      gpuSolver::MultigridDampedJacobiPreconditioner(
-          backend, hierarchyForA, mgPermutations, 2, 2, 1, 0.7f);
 
-  gpuSolver::CGSolver solverMG =
-      gpuSolver::CGSolver(backend, prec, A, mgPermutations[0]);
+  const Clock::time_point mgJacobiSetupStart = Clock::now();
+
+  gpuSolver::MultigridDampedJacobiPreconditioner prec(
+      backend, hierarchyForA, mgPermutations, 2, 2, 1, 0.7f);
+
+  gpuSolver::CGSolver solverMG(backend, prec, A, mgPermutations[0]);
+
+  const double mgJacobiSetupTime = elapsedMs(mgJacobiSetupStart, Clock::now());
 
   solverMG.setMaxIterations(5000);
 
   solverMG.setTolerance(residualTolerance);
 
   std::cout << "\nStarting GPU PCG...\n";
-  xReduced.setRandom();
+  Eigen::VectorXf xReducedMG = Eigen::VectorXf::Zero(n - 1);
 
-  solverMG.solve(bReduced, xReduced);
+  const Clock::time_point mgJacobiSolveStart = Clock::now();
+
+  solverMG.solve(bReduced, xReducedMG);
+
+  const double mgJacobiSolveTime = elapsedMs(mgJacobiSolveStart, Clock::now());
 
   std::cout << "GPU PCG finished.\n";
   nIter = solverMG.getNbOfIterations();
@@ -468,14 +503,14 @@ int main(int argc, char **argv) {
   const float gpuTrueResidualMG =
       (A * xReduced - bReduced).norm() / bReduced.norm();
 
-  std::cout << "\nSolver comparison:\n"
-            << "  GPU iterations with damped jacobi MG Preconditioner             = "
-            << solverMG.getNbOfIterations() << "\n"
-            << "  GPU true relative residual with damped Jacobi MG Preconditioner  = "
-            << gpuTrueResidualMG << "\n"
-            << "\n";
+  std::cout
+      << "\nSolver comparison:\n"
+      << "  GPU iterations with damped jacobi MG Preconditioner             = "
+      << solverMG.getNbOfIterations() << "\n"
+      << "  GPU true relative residual with damped Jacobi MG Preconditioner  = "
+      << gpuTrueResidualMG << "\n"
+      << "\n";
   // constexpr float residualSanityTolerance = 5e-4f;
-
 
   passed = true;
 
@@ -502,6 +537,275 @@ int main(int argc, char **argv) {
     //
     // return 1;
   }
+
+  // ========================================================
+  // Single-level symmetric colored Gauss-Seidel
+  // ========================================================
+
+  std::cout << "\nStarting single-level symmetric Gauss-Seidel PCG...\n";
+
+  // --------------------------------------------------------
+  // Preconditioner.
+  //
+  // Each application performs:
+  //   1. forward color sweep
+  //   2. backward color sweep
+  //
+  // omega = 1 gives ordinary symmetric Gauss-Seidel.
+  // --------------------------------------------------------
+  const Clock::time_point gsSetupStart = Clock::now();
+
+  gpuSolver::SymmetricGaussSeidelPreconditioner gsPreconditioner(1.0f);
+
+  gpuSolver::CGSolver solverGS(backend, gsPreconditioner, A, permutation);
+
+  const double gsSetupTime = elapsedMs(gsSetupStart, Clock::now());
+
+  solverGS.setMaxIterations(2000);
+  solverGS.setTolerance(residualTolerance);
+
+  // --------------------------------------------------------
+  // Solve from zero.
+  // --------------------------------------------------------
+  Eigen::VectorXf xReducedGS = Eigen::VectorXf::Zero(n - 1);
+
+  const Clock::time_point gsSolveStart = Clock::now();
+
+  solverGS.solve(bReduced, xReducedGS);
+
+  const double gsSolveTime = elapsedMs(gsSolveStart, Clock::now());
+  std::cout << "GPU PCG with symmetric Gauss-Seidel finished.\n";
+
+  // --------------------------------------------------------
+  // Reconstruct potential on the original surface.
+  // --------------------------------------------------------
+
+  Eigen::VectorXf potentialGS = Eigen::VectorXf::Zero(n);
+
+  potentialGS[pinnedVertex] = 0.0f;
+
+  for (Eigen::Index i = 0; i < n; ++i) {
+
+    if (i == pinnedVertex) {
+      continue;
+    }
+
+    potentialGS[i] = xReducedGS[oldToReduced[static_cast<std::size_t>(i)]];
+  }
+
+  // --------------------------------------------------------
+  // Check residuals.
+  // --------------------------------------------------------
+
+  const Eigen::VectorXf residualGS = K * potentialGS - b;
+
+  const float absoluteResidualGS = residualGS.norm();
+
+  const float relativeResidualGS = absoluteResidualGS / b.norm();
+
+  const float gpuTrueResidualGS =
+      (A * xReducedGS - bReduced).norm() / bReduced.norm();
+
+  // --------------------------------------------------------
+  // Print results.
+  // --------------------------------------------------------
+
+  std::cout
+      << "\nSolver comparison:\n"
+      << "  GPU iterations with symmetric GS Preconditioner             = "
+      << solverGS.getNbOfIterations() << "\n"
+      << "  GPU true relative residual with symmetric GS Preconditioner = "
+      << gpuTrueResidualGS << "\n"
+      << "  Full Laplacian relative residual                            = "
+      << relativeResidualGS << "\n"
+      << "\n";
+
+  // --------------------------------------------------------
+  // Sanity check.
+  // --------------------------------------------------------
+
+  const float residualSanityTolerance = 5e-4f;
+
+  bool passedGS = std::isfinite(gpuTrueResidualGS) &&
+                  gpuTrueResidualGS < residualSanityTolerance;
+
+  if (passedGS) {
+    std::cout << "\n[PASS] Surface Poisson sanity check with "
+              << "symmetric Gauss-Seidel Preconditioner.\n";
+  } else {
+    std::cerr << "\n[FAIL] Surface Poisson sanity check with "
+              << "symmetric Gauss-Seidel Preconditioner.\n";
+  }
+
+  // ========================================================
+  // Multigrid symmetric colored Gauss-Seidel
+  // ========================================================
+
+  std::cout << "\nStarting multigrid symmetric Gauss-Seidel PCG...\n";
+
+  // --------------------------------------------------------
+  // Multigrid parameters.
+  //
+  // For the first comparison:
+  //   1 symmetric GS pre-smoothing step
+  //   1 symmetric GS post-smoothing step
+  //   1 V-cycle per preconditioner application
+  //
+  // Each symmetric GS step already performs a complete
+  // forward and backward color sweep.
+  // --------------------------------------------------------
+
+  constexpr std::size_t mgGSPreSmoothingSteps = 1;
+  constexpr std::size_t mgGSPostSmoothingSteps = 1;
+  constexpr std::size_t mgGSVcycles = 1;
+
+  constexpr float mgGSOmega = 1.0f;
+
+  // --------------------------------------------------------
+  // Construct MG-GS preconditioner.
+  // --------------------------------------------------------
+
+  const Clock::time_point mgGSSetupStart = Clock::now();
+
+  gpuSolver::MultigridGaussSeidelPreconditioner mgGSPreconditioner(
+      backend, hierarchyForA, mgPermutations, 1, 1, 1, 1.0f);
+
+  gpuSolver::CGSolver solverMGGS(backend, mgGSPreconditioner, A,
+                                 mgPermutations[0]);
+
+  const double mgGSSetupTime = elapsedMs(mgGSSetupStart, Clock::now());
+  // --------------------------------------------------------
+  // Construct CG with the same level-0 permutation as MG.
+  // --------------------------------------------------------
+
+  solverMGGS.setMaxIterations(500);
+  solverMGGS.setTolerance(residualTolerance);
+
+  // --------------------------------------------------------
+  // Solve from zero.
+  // --------------------------------------------------------
+  Eigen::VectorXf xReducedMGGS = Eigen::VectorXf::Zero(n - 1);
+
+  const Clock::time_point mgGSSolveStart = Clock::now();
+
+  solverMGGS.solve(bReduced, xReducedMGGS);
+
+  const double mgGSSolveTime = elapsedMs(mgGSSolveStart, Clock::now());
+
+  std::cout << "GPU PCG with multigrid symmetric Gauss-Seidel finished.\n";
+
+  // --------------------------------------------------------
+  // Reconstruct potential.
+  // --------------------------------------------------------
+
+  Eigen::VectorXf potentialMGGS = Eigen::VectorXf::Zero(n);
+
+  potentialMGGS[pinnedVertex] = 0.0f;
+
+  for (Eigen::Index i = 0; i < n; ++i) {
+
+    if (i == pinnedVertex) {
+      continue;
+    }
+
+    potentialMGGS[i] = xReducedMGGS[oldToReduced[static_cast<std::size_t>(i)]];
+  }
+
+  // --------------------------------------------------------
+  // Check residuals.
+  // --------------------------------------------------------
+
+  const Eigen::VectorXf residualMGGS = K * potentialMGGS - b;
+
+  const float absoluteResidualMGGS = residualMGGS.norm();
+
+  const float relativeResidualMGGS = absoluteResidualMGGS / b.norm();
+
+  const float gpuTrueResidualMGGS =
+      (A * xReducedMGGS - bReduced).norm() / bReduced.norm();
+
+  // --------------------------------------------------------
+  // Print results.
+  // --------------------------------------------------------
+
+  std::cout
+      << "\nSolver comparison:\n"
+      << "  GPU iterations with MG symmetric GS Preconditioner             = "
+      << solverMGGS.getNbOfIterations() << "\n"
+      << "  GPU true relative residual with MG symmetric GS Preconditioner = "
+      << gpuTrueResidualMGGS << "\n"
+      << "  Full Laplacian relative residual                               = "
+      << relativeResidualMGGS << "\n"
+      << "\n";
+
+  // --------------------------------------------------------
+  // Sanity check.
+  // --------------------------------------------------------
+
+  bool passedMGGS = std::isfinite(gpuTrueResidualMGGS) &&
+                    gpuTrueResidualMGGS < residualSanityTolerance;
+
+  if (passedMGGS) {
+    std::cout << "\n[PASS] Surface Poisson sanity check with "
+              << "multigrid symmetric Gauss-Seidel Preconditioner.\n";
+  } else {
+    std::cerr << "\n[FAIL] Surface Poisson sanity check with "
+              << "multigrid symmetric Gauss-Seidel Preconditioner.\n";
+  }
+  // ========================================================
+  // Final comparison
+  // ========================================================
+
+  std::cout
+      << "\n==================================================================="
+         "=============================================\n"
+      << "                                       PRECONDITIONER COMPARISON\n"
+      << "====================================================================="
+         "===========================================\n";
+
+  std::cout << std::left << std::setw(28) << "Preconditioner" << std::right
+            << std::setw(12) << "Iterations" << std::setw(18) << "Setup (ms)"
+            << std::setw(18) << "Solve (ms)" << std::setw(18) << "Total (ms)"
+            << std::setw(20) << "True residual"
+            << "\n";
+
+  std::cout << "---------------------------------------------------------------"
+               "-------------------------------------------------\n";
+
+  std::cout << std::fixed << std::setprecision(3);
+
+  std::cout << std::left << std::setw(28) << "Damped Jacobi" << std::right
+            << std::setw(12) << solver.getNbOfIterations() << std::setw(18)
+            << jacobiSetupTime << std::setw(18) << jacobiSolveTime
+            << std::setw(18) << jacobiSetupTime + jacobiSolveTime
+            << std::setw(20) << gpuTrueResidual << "\n";
+
+  std::cout << std::left << std::setw(28) << "Symmetric Gauss-Seidel"
+            << std::right << std::setw(12) << solverGS.getNbOfIterations()
+            << std::setw(18) << gsSetupTime << std::setw(18) << gsSolveTime
+            << std::setw(18) << gsSetupTime + gsSolveTime << std::setw(20)
+            << gpuTrueResidualGS << "\n";
+
+  std::cout << std::left << std::setw(28) << "MG + damped Jacobi" << std::right
+            << std::setw(12) << solverMG.getNbOfIterations() << std::setw(18)
+            << mgJacobiSetupTime << std::setw(18) << mgJacobiSolveTime
+            << std::setw(18) << mgJacobiSetupTime + mgJacobiSolveTime
+            << std::setw(20) << gpuTrueResidualMG << "\n";
+
+  std::cout << std::left << std::setw(28) << "MG + symmetric GS" << std::right
+            << std::setw(12) << solverMGGS.getNbOfIterations() << std::setw(18)
+            << mgGSSetupTime << std::setw(18) << mgGSSolveTime << std::setw(18)
+            << mgGSSetupTime + mgGSSolveTime << std::setw(20)
+            << gpuTrueResidualMGGS << "\n";
+
+  std::cout << "==============================================================="
+               "=================================================\n";
+
+  std::cout << "\nShared AMG preprocessing:\n"
+            << "  AMGCL hierarchy construction = " << hierarchyTime << " ms\n"
+            << "  RCM permutations             = " << permutationTime
+            << " ms\n";
+
   // --------------------------------------------------------
   // Compute electric field
   //

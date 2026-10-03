@@ -80,6 +80,7 @@ if(APPLE)
             src/metal/MetalBackend.cc
             src/metal/MetalEncoder.cc
             src/DeviceVector.cc
+            src/DeviceIndexVector.cc
             src/DeviceSparseMatrix.cc
             src/DeviceScalar.cc
             src/HostSparseMatrix.cc 
@@ -90,10 +91,13 @@ if(APPLE)
             src/AMGHierarchy.cc
             src/DeviceELLMatrix.cc
             src/HostELLMatrix.cc
+            src/GraphColoring.cc
             src/Preconditioners/IdentityPreconditioner.cc
             src/Preconditioners/MetalJacobiPreconditioner.cc
             src/Preconditioners/DampedJacobiPreconditioner.cc
             src/Preconditioners/MultigridDampedJacobiPreconditioner.cc
+            src/Preconditioners/SymmetricGaussSeidelPreconditioner.cc
+            src/Preconditioners/MultigridGaussSeidelPreconditioner.cc
             src/SparseMatrixUtils.cc
             
     )
@@ -127,6 +131,10 @@ if(APPLE)
         "${PROJECT_SOURCE_DIR}/kernels/ScalarKernels.metal"
     )
 
+    set(GPUSOLVER_METAL_GAUSS_SEIDEL_SOURCE
+      "${PROJECT_SOURCE_DIR}/kernels/GaussSeidelColoringKernels.metal"
+    )
+
     set(GPUSOLVER_METAL_OUTPUT_DIR
         "${CMAKE_BINARY_DIR}/metal"
     )
@@ -145,6 +153,9 @@ if(APPLE)
 
     set(GPUSOLVER_METAL_SCALAR_AIR
         "${GPUSOLVER_METAL_OUTPUT_DIR}/scalar.air"
+    )
+    set(GPUSOLVER_METAL_GAUSS_SEIDEL_AIR
+      "${GPUSOLVER_METAL_OUTPUT_DIR}/gaussSeidel.air"
     )
 
     set(GPUSOLVER_METAL_LIBRARY
@@ -254,6 +265,29 @@ if(APPLE)
         "Compiling Metal scalar kernels"
     )
 
+    # ------------------------------------------------------------
+    # Compile GaussSeidelColoringKernels.metal -> gaussSeidel.air
+    # ------------------------------------------------------------
+
+    add_custom_command(
+        OUTPUT
+        ${GPUSOLVER_METAL_GAUSS_SEIDEL_AIR}
+
+        COMMAND
+            xcrun
+            -sdk macosx
+            metal
+            -c
+            ${GPUSOLVER_METAL_GAUSS_SEIDEL_SOURCE}
+            -o
+            ${GPUSOLVER_METAL_GAUSS_SEIDEL_AIR}
+
+        DEPENDS
+        ${GPUSOLVER_METAL_GAUSS_SEIDEL_SOURCE}
+
+        COMMENT
+        "Compiling Metal gauss seidel kernels"
+    )
 
     # ------------------------------------------------------------
     # Link all AIR files into one metallib
@@ -271,6 +305,7 @@ if(APPLE)
             ${GPUSOLVER_METAL_SPMV_AIR}
             ${GPUSOLVER_METAL_REDUCTION_AIR}
             ${GPUSOLVER_METAL_SCALAR_AIR}
+            ${GPUSOLVER_METAL_GAUSS_SEIDEL_AIR}
             -o
             ${GPUSOLVER_METAL_LIBRARY}
 
@@ -279,6 +314,7 @@ if(APPLE)
             ${GPUSOLVER_METAL_SPMV_AIR}
             ${GPUSOLVER_METAL_REDUCTION_AIR}
             ${GPUSOLVER_METAL_SCALAR_AIR}
+            ${GPUSOLVER_METAL_GAUSS_SEIDEL_AIR}
 
         COMMENT
             "Linking Metal library gpuSolver.metallib"

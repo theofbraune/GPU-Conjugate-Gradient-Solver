@@ -40,3 +40,21 @@ set_target_properties(benchmarkPermutations
         RUNTIME_OUTPUT_DIRECTORY
             "${CMAKE_BINARY_DIR}/bin/tests/amg"
 )
+
+add_executable(AMGgraphColoringUnittest
+  amgColoringCheck.cc
+)
+
+target_link_libraries(AMGgraphColoringUnittest
+    PRIVATE
+        gpuSolver::gpuSolver
+        gpuSolverAMG
+        GTest::gtest_main
+        igl::core
+)
+
+set_target_properties(AMGgraphColoringUnittest PROPERTIES
+    FOLDER "tests/amg"
+    RUNTIME_OUTPUT_DIRECTORY
+        "${CMAKE_BINARY_DIR}/bin/tests/amg"
+)

@@ -1,5 +1,6 @@
 #include "GPUSolver/Backend.h"
 #include "GPUSolver/BackendEncoder.h"
+#include "GPUSolver/DeviceIndexVector.h"
 #include "GPUSolver/DeviceScalar.h"
 #include "GPUSolver/DeviceVector.h"
 #include <Foundation/NSError.hpp>
@@ -26,6 +27,7 @@
 #include <cstring>
 #include <iterator>
 #include <stdexcept>
+#include <sys/types.h>
 
 namespace gpuSolver {
 
@@ -49,6 +51,7 @@ struct MetalBackend::Impl {
   MTL::ComputePipelineState *scalarMultiplyPipeline = nullptr;
   MTL::ComputePipelineState *scalarNegatePipeline = nullptr;
   MTL::ComputePipelineState *scalarSqrtPipeline = nullptr;
+  MTL::ComputePipelineState *gaussSeidelColorPipeline = nullptr;
 
   // now the dataa needed for the dot pipeline
   MTL::ComputePipelineState *dotPartialPipeline = nullptr;
@@ -175,6 +178,9 @@ MetalBackend::MetalBackend(MetalContext &context) {
 
   impl_->setZeroPipeline =
       makePipeline(context.device(), context.library(), "setZero");
+
+  impl_->gaussSeidelColorPipeline =
+      makePipeline(context.device(), context.library(), "gaussSeidelColor");
 }
 
 MetalBackend::~MetalBackend() {
@@ -251,8 +257,11 @@ MetalBackend::~MetalBackend() {
     impl_->scaleVectorByVectorPipeline->release();
   }
 
-  if(impl_->setZeroPipeline){
+  if (impl_->setZeroPipeline) {
     impl_->setZeroPipeline->release();
+  }
+  if (impl_->gaussSeidelColorPipeline) {
+    impl_->gaussSeidelColorPipeline->release();
   }
 
   delete impl_;
@@ -302,7 +311,6 @@ void MetalBackend::encodeSetZeroMetal(MTL::ComputeCommandEncoder *encoder,
   encoder->setBuffer(input.getNativeBuffer(), 0, 0);
 
   dispatch1D(encoder, impl_->setZeroPipeline, input.size());
-
 }
 
 void MetalBackend::encodeScaleMetal(MTL::ComputeCommandEncoder *encoder,
@@ -423,6 +431,38 @@ void MetalBackend::encodeSpmvMetal(MTL::ComputeCommandEncoder *encoder,
   encoder->setBuffer(Ax.getNativeBuffer(), 0, 4);
 
   dispatch1D(encoder, impl_->spmvPipeline, A.rows());
+}
+
+void MetalBackend::encodeGaussSeidelColorMetal(
+    MTL::ComputeCommandEncoder *encoder, const DeviceCSRMatrix &matrix,
+    const DeviceIndexVector &colorVertices, std::size_t colorStart,
+    std::size_t colorCount, const DeviceVector &rhs, DeviceVector &solution,
+    float omega) {
+  encoder->setComputePipelineState(impl_->gaussSeidelColorPipeline);
+
+  encoder->setBuffer(matrix.getRowPtrBuffer(), 0, 0);
+
+  encoder->setBuffer(matrix.getColPtrBuffer(), 0, 1);
+
+  encoder->setBuffer(matrix.getValPtrBuffer(), 0, 2);
+
+  encoder->setBuffer(colorVertices.getNativeBuffer(), 0, 3);
+
+  encoder->setBuffer(rhs.getNativeBuffer(), 0, 4);
+
+  encoder->setBuffer(solution.getNativeBuffer(), 0, 5);
+
+  const uint32_t start = static_cast<uint32_t>(colorStart);
+
+  encoder->setBytes(&start, sizeof(uint32_t), 6);
+
+  encoder->setBytes(&omega, sizeof(float), 7);
+
+  const uint32_t count = static_cast<uint32_t>(colorCount);
+
+  encoder->setBytes(&count, sizeof(uint32_t), 8);
+  
+  dispatch1D(encoder, impl_->gaussSeidelColorPipeline, colorCount);
 }
 
 void MetalBackend::encodeSpmvELLMetal(MTL::ComputeCommandEncoder *encoder,
@@ -758,7 +798,7 @@ void MetalBackend::encodeScalarNegate(BackendEncoder &encoder,
   encodeScalarNegateMetal(metalEncoder.encoder_, input, output);
 }
 
-void MetalBackend::encodeSetZero(BackendEncoder& encoder, DeviceVector& input) {
+void MetalBackend::encodeSetZero(BackendEncoder &encoder, DeviceVector &input) {
 
   MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
 
@@ -779,6 +819,21 @@ void MetalBackend::encodeSpmvELL(BackendEncoder &encoder,
   encodeSpmvELLMetal(metalEncoder.encoder_, A, x, Ax);
 }
 
+void MetalBackend::encodeGaussSeidelColor(
+    BackendEncoder &encoder, const DeviceCSRMatrix &matrix,
+    const DeviceIndexVector &colorVertices, std::size_t colorStart,
+    std::size_t colorCount, const DeviceVector &rhs, DeviceVector &solution,
+    float omega) {
+
+  MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
+
+  encodeGaussSeidelColorMetal(metalEncoder.encoder_, matrix, colorVertices,
+                              colorStart, colorCount, rhs, solution, omega);
+
+  // , const DeviceCSRMatrix &matrix, const DeviceIndexVector &colorVertices,
+  // std::size_t colorStart, std::size_t colorCount, const DeviceVector &rhs,
+  // DeviceVector &solution, float omega)
+}
 // carry out the actual operations
 void MetalBackend::scale(DeviceVector &x, float scalar) {
 
@@ -1004,8 +1059,6 @@ void MetalBackend::spmvRepeated(const DeviceELLMatrix &A, const DeviceVector &x,
   // commandBuffer->waitUntilCompleted();
 }
 
-
-
 void MetalBackend::scaleVectorByVector(const DeviceVector &scaleVector,
                                        DeviceVector &output) {
   BackendEncoder *encoder = createEncoder();
@@ -1175,4 +1228,15 @@ DeviceScalar *MetalBackend::createScalar(float value) {
   return devSca;
 }
 
+DeviceIndexVector *MetalBackend::createIndexVector(std::size_t size) {
+  DeviceIndexVector *devVec = new DeviceIndexVector(this->impl_->context, size);
+  return devVec;
+}
+
+DeviceIndexVector *MetalBackend::createIndexVector(std::size_t size,
+                                                   const int *values) {
+  DeviceIndexVector *devVec =
+      new DeviceIndexVector(this->impl_->context, size, values);
+  return devVec;
+}
 } // namespace gpuSolver

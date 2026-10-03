@@ -5,6 +5,36 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY
 include(googletest)
 
 
+add_executable(graphColoringUnittest
+  graphColoringTest.cc
+)
+
+target_link_libraries(graphColoringUnittest
+    PRIVATE
+        gpuSolver::gpuSolver
+        GTest::gtest_main
+)
+
+set_target_properties(graphColoringUnittest PROPERTIES
+    FOLDER tests
+)
+
+
+add_executable(gaussSeidelUnittest
+  gaussSeidelSymmUnittest.cc
+)
+
+target_link_libraries(gaussSeidelUnittest
+    PRIVATE
+        gpuSolver::gpuSolver
+        GTest::gtest_main
+)
+
+set_target_properties(gaussSeidelUnittest PROPERTIES
+    FOLDER tests
+)
+
+
 add_executable(permutationUnittests
     PermutationUnittests.cc
 )
@@ -76,6 +106,7 @@ target_link_libraries(laplacianTestCG
 target_compile_definitions(laplacianTestCG
     PRIVATE
         PROJECT_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+
 
 
 include(polyscope)

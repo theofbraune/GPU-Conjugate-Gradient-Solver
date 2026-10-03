@@ -7,6 +7,7 @@
 #include <GPUSolver/DeviceScalar.h>
 #include <GPUSolver/DeviceSparseMatrix.h>
 #include <GPUSolver/DeviceVector.h>
+#include <GPUSolver/DeviceIndexVector.h>
 
 #include <GPUSolver/metal/MetalContext.h>
 
@@ -58,11 +59,20 @@ private:
                       const DeviceVector &x, const DeviceVector &y,
                       DeviceScalar &result);
 
-  void encodeScaleVectorMetal(MTL::ComputeCommandEncoder *encoder, const DeviceVector &scaleVector,
-                                 DeviceVector &output);
+  void encodeScaleVectorMetal(MTL::ComputeCommandEncoder *encoder,
+                              const DeviceVector &scaleVector,
+                              DeviceVector &output);
 
+  void encodeGaussSeidelColorMetal(MTL::ComputeCommandEncoder *encoder,
+                                   const DeviceCSRMatrix &matrix,
+                                   const DeviceIndexVector &colorVertices,
+                                   std::size_t colorStart,
+                                   std::size_t colorCount,
+                                   const DeviceVector &rhs,
+                                   DeviceVector &solution, float omega);
   // void encodeSetZero(BackendEncoder& encoder, DeviceVector& input) override;
-  void encodeSetZeroMetal(MTL::ComputeCommandEncoder *encoder, DeviceVector &input);
+  void encodeSetZeroMetal(MTL::ComputeCommandEncoder *encoder,
+                          DeviceVector &input);
 
   void encodeScaleMetal(MTL::ComputeCommandEncoder *encoder, DeviceVector &x,
                         float scalar);
@@ -88,7 +98,7 @@ private:
 
   void encodeScalarDivideMetal(MTL::ComputeCommandEncoder *encoder,
                                const DeviceScalar &numerator,
-                               const DeviceScalar &denominator,   
+                               const DeviceScalar &denominator,
                                DeviceScalar &result);
 
   void encodeScalarMultiplyMetal(MTL::ComputeCommandEncoder *encoder,
@@ -130,7 +140,7 @@ public:
   // They do NOT submit and do NOT synchronize.
   // ========================================================
 
-  void encodeSetZero(BackendEncoder& encoder, DeviceVector& input) override;
+  void encodeSetZero(BackendEncoder &encoder, DeviceVector &input) override;
 
   void encodeScale(BackendEncoder &encoder, DeviceVector &x,
                    float scalar) override;
@@ -138,8 +148,9 @@ public:
   void encodeScale(BackendEncoder &encoder, DeviceVector &x,
                    const DeviceScalar &scalar) override;
 
-  void encodeScaleVector(BackendEncoder &encoder, const DeviceVector &scaleVector,
-                                 DeviceVector &output) override;
+  void encodeScaleVector(BackendEncoder &encoder,
+                         const DeviceVector &scaleVector,
+                         DeviceVector &output) override;
 
   void encodeCopy(BackendEncoder &encoder, const DeviceVector &x,
                   DeviceVector &xCopy) override;
@@ -178,6 +189,13 @@ public:
   void encodeScalarSqrt(BackendEncoder &encoder, const DeviceScalar &input,
                         DeviceScalar &output) override;
 
+  void encodeGaussSeidelColor(BackendEncoder &encoder,
+                              const DeviceCSRMatrix &matrix,
+                              const DeviceIndexVector &colorVertices,
+                              std::size_t colorStart, std::size_t colorCount,
+                              const DeviceVector &rhs, DeviceVector &solution,
+                              float omega) override;
+
   // --------------------------------------------------------
   // Metal-specific ELL encoding.
   //
@@ -201,7 +219,8 @@ public:
 
   void scale(DeviceVector &x, const DeviceScalar &scalar) override;
 
-  void scaleVectorByVector(const DeviceVector& scaleVector, DeviceVector& output) override;
+  void scaleVectorByVector(const DeviceVector &scaleVector,
+                           DeviceVector &output) override;
 
   void axpy(float alpha, const DeviceVector &x, DeviceVector &y) override;
 
@@ -241,17 +260,19 @@ public:
   void spmvRepeated(const DeviceELLMatrix &A, const DeviceVector &x,
                     DeviceVector &Ax, std::size_t repetitions);
 
-
   DeviceCSRMatrix *createCSRMatrix(const HostCSRMatrix &matrix) override;
 
   DeviceVector *createVector(std::size_t size) override;
 
-  DeviceVector *createVector(std::size_t size, const float* values) override;
+  DeviceVector *createVector(std::size_t size, const float *values) override;
 
   DeviceScalar *createScalar() override;
 
   DeviceScalar *createScalar(float value) override;
 
+  DeviceIndexVector *createIndexVector(std::size_t size) override;
+
+  DeviceIndexVector *createIndexVector(std::size_t size, const int* values) override;
 };
 
 } // namespace gpuSolver
