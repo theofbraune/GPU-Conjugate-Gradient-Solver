@@ -3,26 +3,21 @@
 #include "../Preconditioner.h"
 #include "GPUSolver/DeviceSparseMatrix.h"
 #include "GPUSolver/DeviceVector.h"
+#include <GPUSolver/Smoothers/DampedJacobiSmoother.h>
 #include <cstddef>
 namespace gpuSolver {
 
 class DampedJacobiPreconditioner : public Preconditioner {
 private:
-  DeviceVector *inverseDiagonal_;
-  DeviceVector *Az_;
-  DeviceVector *correction_;
-
-  const DeviceCSRMatrix *matrix_;
+  DampedJacobiSmoother* smoother;
 
   float omega_;
   std::size_t smoothingSteps_;
 
+
 public:
   void apply(Backend &backend, BackendEncoder &encoder,
              const DeviceVector &residual, DeviceVector &z) override;
-
-  void smooth(Backend &backend, BackendEncoder &encoder,
-             const DeviceVector &residual, DeviceVector &z, std::size_t iters);
 
   DampedJacobiPreconditioner() = delete;
   DampedJacobiPreconditioner(const std::size_t nSmoother, const float weight);

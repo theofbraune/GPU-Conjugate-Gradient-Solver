@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../Preconditioner.h"
+#include "GPUSolver/Smoother.h"
 
 #include <cstddef>
 #include <vector>
@@ -17,22 +18,16 @@ class HostCSRMatrix;
 class SymmetricGaussSeidelPreconditioner : public Preconditioner
 {
 private:
-    // Borrowed from CGSolver or the multigrid level.
-    const DeviceCSRMatrix* matrix_;
+    
+    std::size_t nbOfReps = 1;
 
-    // Owned GPU coloring.
-    DeviceIndexVector* colorVertices_;
-
-    // Host-side boundaries between color classes.
-    std::vector<int> colorOffsets_;
-
-    std::size_t numberOfColors_;
+    Smoother* smoother = nullptr;
 
     float omega_;
 
 public:
     explicit SymmetricGaussSeidelPreconditioner(
-        float omega = 1.0f
+        float omega = 1.0f, std::size_t nbOfIters = 1
     );
 
     ~SymmetricGaussSeidelPreconditioner() override;
@@ -58,14 +53,6 @@ public:
         DeviceVector& output
     ) override;
 
-    // Updates an existing solution without resetting it.
-    void smooth(
-        Backend& backend,
-        BackendEncoder& encoder,
-        const DeviceVector& rhs,
-        DeviceVector& solution,
-        std::size_t iterations
-    );
 };
 
 } // namespace gpuSolver

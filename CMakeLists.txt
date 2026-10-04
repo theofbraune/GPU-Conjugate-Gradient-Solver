@@ -99,7 +99,9 @@ if(APPLE)
             src/Preconditioners/SymmetricGaussSeidelPreconditioner.cc
             src/Preconditioners/MultigridGaussSeidelPreconditioner.cc
             src/SparseMatrixUtils.cc
-            
+            src/Smoothers/DampedJacobiSmoother.cc
+            src/Smoothers/SymmetricGaussSeidelSmoother.cc
+            src/Smoothers/MultigridSmoother.cc
     )
 
     target_link_libraries(gpuSolver

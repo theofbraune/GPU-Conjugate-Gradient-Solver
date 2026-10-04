@@ -114,6 +114,7 @@ tags
 .history
 .ionide
 
+*.mesh
 
 build/
 build/*
@@ -125,5 +126,6 @@ external/*
 .DS_Store
 
 .cache/
+
 
 # End of https://www.toptal.com/developers/gitignore/api/vim,c++,visualstudiocode,c
