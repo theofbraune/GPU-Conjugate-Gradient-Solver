@@ -371,4 +371,99 @@ buildRestrictionMatricesRugeStuben(
   return buildRestrictionChainImpl<Coarsening>(A, maxVertices, configureParams);
 }
 
+gpuSolver::AMGHierarchy buildAmgclBlockSmoothedAggregationHierarchy(
+    const Eigen::SparseMatrix<float, Eigen::RowMajor>& A0,
+    int blockSize,
+    int maxLevels,
+    int minDofs)
+{
+    using Coarsening = amgcl::coarsening::smoothed_aggregation<Backend>;
+
+    if (blockSize <= 0) {
+        throw std::runtime_error(
+            "buildAmgclBlockSmoothedAggregationHierarchy: blockSize must be positive.");
+    }
+
+    if (A0.rows() % blockSize != 0) {
+        throw std::runtime_error(
+            "buildAmgclBlockSmoothedAggregationHierarchy: "
+            "matrix size is not divisible by blockSize.");
+    }
+
+    gpuSolver::AMGHierarchy H;
+
+    std::shared_ptr<CrsMatrix> Abackend = toBackend(A0);
+
+    H.A.push_back(A0);
+
+    // Near-null space: blockSize "constant-per-component" vectors.
+    // Column c is 1 on every DOF whose component index (row % blockSize)
+    // equals c, zero elsewhere.
+    Eigen::MatrixXf nullspace = Eigen::MatrixXf::Zero(A0.rows(), blockSize);
+
+    for (int row = 0; row < A0.rows(); ++row) {
+        const int component = row % blockSize;
+        nullspace(row, component) = 1.0f;
+    }
+
+    for (int level = 0; level < maxLevels; ++level) {
+        const int nRows = static_cast<int>(Abackend->nrows);
+
+        if (nRows <= minDofs) {
+            break;
+        }
+
+        Coarsening::params prm;
+
+        prm.aggr.block_size = blockSize;
+        prm.aggr.eps_strong = 0.1f;
+
+        prm.nullspace.cols = blockSize;
+        prm.nullspace.B.resize(static_cast<std::size_t>(blockSize) * nRows);
+
+        // Column-major packing: B[col * nrows + row]. Matches
+        // buildAmgclSmoothedAggregationHierarchy's convention, not
+        // buildAmgclAggregationHierarchy's -- see the standing caveat
+        // about those two differing (and, worth re-checking, possibly
+        // self-inconsistent) conventions before trusting either blindly.
+        for (int c = 0; c < blockSize; ++c) {
+            for (int r = 0; r < nRows; ++r) {
+                prm.nullspace.B[static_cast<std::size_t>(c) * nRows + r] =
+                    nullspace(r, c);
+            }
+        }
+
+        Coarsening coarsening(prm);
+
+        auto [Pptr, Rptr] = coarsening.transfer_operators(*Abackend);
+
+        gpuSolver::AMGHierarchy::Matrix P = toEigen(*Pptr);
+        gpuSolver::AMGHierarchy::Matrix R = toEigen(*Rptr);
+
+        H.P.push_back(P);
+        H.R.push_back(R);
+
+        std::shared_ptr<CrsMatrix> AcoarseBackend =
+            coarsening.coarse_operator(*Abackend, *Pptr, *Rptr);
+
+        gpuSolver::AMGHierarchy::Matrix Acoarse = toEigen(*AcoarseBackend);
+
+        H.A.push_back(Acoarse);
+
+        // Restrict and re-orthonormalize: R is non-orthogonal, so its
+        // columns need re-orthonormalizing via QR before the next level's
+        // tentative prolongator can use them -- same reasoning as
+        // buildHierarchyImpl above.
+        nullspace = R * nullspace;
+
+        Eigen::HouseholderQR<Eigen::MatrixXf> qr(nullspace);
+        nullspace = qr.householderQ() *
+            Eigen::MatrixXf::Identity(nullspace.rows(), blockSize);
+
+        Abackend = AcoarseBackend;
+    }
+
+    return H;
+}
+
 } // namespace MGBuilder

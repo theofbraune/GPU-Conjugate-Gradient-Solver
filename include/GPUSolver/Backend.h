@@ -27,7 +27,8 @@ public:
 
   virtual DeviceIndexVector *createIndexVector(std::size_t size) = 0;
 
-  virtual DeviceIndexVector *createIndexVector(std::size_t size, const int* values) = 0;
+  virtual DeviceIndexVector *createIndexVector(std::size_t size,
+                                               const int *values) = 0;
 
   virtual DeviceScalar *createScalar() = 0;
 
@@ -63,11 +64,13 @@ public:
   virtual void encodeSpmv(BackendEncoder &encoder, const DeviceCSRMatrix &A,
                           const DeviceVector &x, DeviceVector &y) = 0;
 
-  virtual void encodeGaussSeidelColor(
-      BackendEncoder &encoder, const DeviceCSRMatrix &matrix,
-      const DeviceIndexVector &colorVertices, std::size_t colorStart,
-      std::size_t colorCount, const DeviceVector &rhs, DeviceVector &solution,
-      float omega) = 0; 
+  virtual void encodeGaussSeidelColor(BackendEncoder &encoder,
+                                      const DeviceCSRMatrix &matrix,
+                                      const DeviceIndexVector &colorVertices,
+                                      std::size_t colorStart,
+                                      std::size_t colorCount,
+                                      const DeviceVector &rhs,
+                                      DeviceVector &solution, float omega) = 0;
 
   virtual void encodeDot(BackendEncoder &encoder, const DeviceVector &x,
                          const DeviceVector &y, DeviceScalar &result) = 0;
@@ -95,6 +98,16 @@ public:
   virtual void encodeScalarSqrt(BackendEncoder &encoder,
                                 const DeviceScalar &input,
                                 DeviceScalar &output) = 0;
+
+  virtual void encodeApplyBlockInverses3x3(
+      BackendEncoder &encoder, const DeviceVector &inverseDiagBlocks,
+      const DeviceVector &residual, DeviceVector &correction) = 0;
+
+  virtual void encodeBlockGaussSeidelColor3x3(
+      BackendEncoder &encoder, const DeviceCSRMatrix &matrix,
+      const DeviceIndexVector &colorBlocks,
+      const DeviceVector &diagonalInverses, std::size_t begin, std::size_t end,
+      const DeviceVector &rhs, DeviceVector &solution, float omega) = 0;
 
   // --------------------------------------------------------
   // High-level standalone API.

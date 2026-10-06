@@ -7,6 +7,8 @@
 
 #include <GPUSolver/Smoothers/DampedJacobiSmoother.h>
 #include <GPUSolver/Smoothers/SymmetricGaussSeidelSmoother.h>
+#include <GPUSolver/Smoothers/BlockJacobiSmoother.h>
+#include <GPUSolver/Smoothers/BlockGaussSeidelSmoother.h>
 
 // Use the header containing your existing permuteMatrix().
 #include <GPUSolver/SparseMatrixUtils.h>
@@ -82,6 +84,17 @@ MultigridSmoother::MultigridSmoother(
     case SmootherType::SymmetricGaussSeidel:
 
       currentLevel.smoother = new SymmetricGaussSeidelSmoother(omega);
+
+      break;
+    case SmootherType::BlockJacobi:
+
+      currentLevel.smoother = new BlockJacobiSmoother(omega);
+
+      break;
+
+    case SmootherType::BlockGaussSeidel:
+
+      currentLevel.smoother = new BlockGaussSeidelSmoother(omega);
 
       break;
 

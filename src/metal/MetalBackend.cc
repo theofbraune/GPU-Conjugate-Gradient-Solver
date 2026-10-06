@@ -24,6 +24,7 @@
 #include <Metal/MTLTypes.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <iterator>
 #include <stdexcept>
@@ -52,6 +53,8 @@ struct MetalBackend::Impl {
   MTL::ComputePipelineState *scalarNegatePipeline = nullptr;
   MTL::ComputePipelineState *scalarSqrtPipeline = nullptr;
   MTL::ComputePipelineState *gaussSeidelColorPipeline = nullptr;
+  MTL::ComputePipelineState *invertBlockDiagonalPipeline = nullptr;
+  MTL::ComputePipelineState *blockGaussSeidelColor3x3Pipeline = nullptr;
 
   // now the dataa needed for the dot pipeline
   MTL::ComputePipelineState *dotPartialPipeline = nullptr;
@@ -181,6 +184,12 @@ MetalBackend::MetalBackend(MetalContext &context) {
 
   impl_->gaussSeidelColorPipeline =
       makePipeline(context.device(), context.library(), "gaussSeidelColor");
+
+  impl_->invertBlockDiagonalPipeline = makePipeline(
+      context.device(), context.library(), "invert3x3BlockDiagonal");
+
+  impl_->gaussSeidelColorPipeline = makePipeline(
+      context.device(), context.library(), "blockGaussSeidelColor3x3");
 }
 
 MetalBackend::~MetalBackend() {
@@ -262,6 +271,12 @@ MetalBackend::~MetalBackend() {
   }
   if (impl_->gaussSeidelColorPipeline) {
     impl_->gaussSeidelColorPipeline->release();
+  }
+  if (impl_->invertBlockDiagonalPipeline) {
+    impl_->invertBlockDiagonalPipeline->release();
+  }
+  if(impl_->blockGaussSeidelColor3x3Pipeline){
+    impl_->blockGaussSeidelColor3x3Pipeline->release();
   }
 
   delete impl_;
@@ -461,8 +476,27 @@ void MetalBackend::encodeGaussSeidelColorMetal(
   const uint32_t count = static_cast<uint32_t>(colorCount);
 
   encoder->setBytes(&count, sizeof(uint32_t), 8);
-  
+
   dispatch1D(encoder, impl_->gaussSeidelColorPipeline, colorCount);
+}
+
+void MetalBackend::encodeApplyBlockInverses3x3Metal(
+    MTL::ComputeCommandEncoder *encoder, const DeviceVector &inverseDiagBlocks,
+    const DeviceVector &residual, DeviceVector &correction) {
+
+  encoder->setComputePipelineState(impl_->invertBlockDiagonalPipeline);
+
+  encoder->setBuffer(inverseDiagBlocks.getNativeBuffer(), 0, 0);
+
+  encoder->setBuffer(residual.getNativeBuffer(), 0, 1);
+
+  encoder->setBuffer(correction.getNativeBuffer(), 0, 2);
+
+  uint32_t nbOfBlocks = static_cast<uint32_t>(residual.size() / 3);
+
+  encoder->setBytes(&nbOfBlocks, sizeof(uint32_t), 3);
+
+  dispatch1D(encoder, impl_->invertBlockDiagonalPipeline, nbOfBlocks);
 }
 
 void MetalBackend::encodeSpmvELLMetal(MTL::ComputeCommandEncoder *encoder,
@@ -669,6 +703,71 @@ void MetalBackend::encodeScalarCopyMetal(MTL::ComputeCommandEncoder *encoder,
   encoder->setBuffer(result.getNativeBuffer(), 0, 1);
 
   encoder->dispatchThreads(MTL::Size(1, 1, 1), MTL::Size(1, 1, 1));
+}
+
+void MetalBackend::encodeBlockGaussSeidelColor3x3Metal(
+    MTL::ComputeCommandEncoder *encoder, const DeviceCSRMatrix &matrix,
+    const DeviceIndexVector &colorBlocks,
+    const DeviceVector &inverseDiagonalBlocks, std::size_t colorStart,
+    std::size_t colorCount, const DeviceVector &rhs, DeviceVector &solution,
+    float omega) {
+  if (colorCount == 0) {
+    return;
+  }
+
+  encoder->setComputePipelineState(impl_->blockGaussSeidelColor3x3Pipeline);
+
+  // CSR matrix
+  encoder->setBuffer(matrix.getRowPtrBuffer(), 0, 0);
+
+  encoder->setBuffer(matrix.getColPtrBuffer(), 0, 1);
+
+  encoder->setBuffer(matrix.getValPtrBuffer(), 0, 2);
+
+  // Block indices for the coloring.
+  encoder->setBuffer(colorBlocks.getNativeBuffer(), 0, 3);
+
+  // 9 floats per block.
+  encoder->setBuffer(inverseDiagonalBlocks.getNativeBuffer(), 0, 4);
+
+  // rhs and solution.
+  encoder->setBuffer(rhs.getNativeBuffer(), 0, 5);
+
+  encoder->setBuffer(solution.getNativeBuffer(), 0, 6);
+
+  const uint32_t start = static_cast<uint32_t>(colorStart);
+
+  const uint32_t count = static_cast<uint32_t>(colorCount);
+
+  encoder->setBytes(&start, sizeof(uint32_t), 7);
+
+  encoder->setBytes(&count, sizeof(uint32_t), 8);
+
+  encoder->setBytes(&omega, sizeof(float), 9);
+
+  dispatch1D(encoder, impl_->blockGaussSeidelColor3x3Pipeline, colorCount);
+}
+
+void MetalBackend::encodeApplyBlockInverses3x3(
+    BackendEncoder &encoder, const DeviceVector &inverseDiagBlocks,
+    const DeviceVector &residual, DeviceVector &correction) {
+  MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
+
+  this->encodeApplyBlockInverses3x3Metal(
+      metalEncoder.encoder_, inverseDiagBlocks, residual, correction);
+}
+
+void MetalBackend::encodeBlockGaussSeidelColor3x3(
+    BackendEncoder &encoder, const DeviceCSRMatrix &matrix,
+    const DeviceIndexVector &colorBlocks,
+    const DeviceVector &inverseDiagonalBlocks, std::size_t colorStart,
+    std::size_t colorCount, const DeviceVector &rhs, DeviceVector &solution,
+    float omega) {
+  MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
+
+  encodeBlockGaussSeidelColor3x3Metal(
+      metalEncoder.encoder_, matrix, colorBlocks, inverseDiagonalBlocks,
+      colorStart, colorCount, rhs, solution, omega);
 }
 
 void MetalBackend::submit(BackendEncoder &encoder) {

@@ -4,10 +4,10 @@
 #include <GPUSolver/BackendEncoder.h>
 
 #include <GPUSolver/DeviceELLMatrix.h>
+#include <GPUSolver/DeviceIndexVector.h>
 #include <GPUSolver/DeviceScalar.h>
 #include <GPUSolver/DeviceSparseMatrix.h>
 #include <GPUSolver/DeviceVector.h>
-#include <GPUSolver/DeviceIndexVector.h>
 
 #include <GPUSolver/metal/MetalContext.h>
 
@@ -70,6 +70,19 @@ private:
                                    std::size_t colorCount,
                                    const DeviceVector &rhs,
                                    DeviceVector &solution, float omega);
+
+  void encodeApplyBlockInverses3x3Metal(MTL::ComputeCommandEncoder *encoder,
+                                        const DeviceVector &inverseDiagBlocks,
+                                        const DeviceVector &residual,
+                                        DeviceVector &correction);
+
+
+  void encodeBlockGaussSeidelColor3x3Metal(
+      MTL::ComputeCommandEncoder* encoder, const DeviceCSRMatrix &matrix,
+      const DeviceIndexVector &colorBlocks,
+      const DeviceVector &diagonalInverses, std::size_t begin, std::size_t end,
+      const DeviceVector &rhs, DeviceVector &solution, float omega);
+
   // void encodeSetZero(BackendEncoder& encoder, DeviceVector& input) override;
   void encodeSetZeroMetal(MTL::ComputeCommandEncoder *encoder,
                           DeviceVector &input);
@@ -196,6 +209,18 @@ public:
                               const DeviceVector &rhs, DeviceVector &solution,
                               float omega) override;
 
+  void encodeApplyBlockInverses3x3(BackendEncoder &encoder,
+                                   const DeviceVector &inverseDiagBlocks,
+                                   const DeviceVector &residual,
+                                   DeviceVector &correction) override;
+
+
+  void encodeBlockGaussSeidelColor3x3(
+      BackendEncoder &encoder, const DeviceCSRMatrix &matrix,
+      const DeviceIndexVector &colorBlocks,
+      const DeviceVector &diagonalInverses, std::size_t begin, std::size_t end,
+      const DeviceVector &rhs, DeviceVector &solution, float omega) override;
+
   // --------------------------------------------------------
   // Metal-specific ELL encoding.
   //
@@ -272,7 +297,8 @@ public:
 
   DeviceIndexVector *createIndexVector(std::size_t size) override;
 
-  DeviceIndexVector *createIndexVector(std::size_t size, const int* values) override;
+  DeviceIndexVector *createIndexVector(std::size_t size,
+                                       const int *values) override;
 };
 
 } // namespace gpuSolver

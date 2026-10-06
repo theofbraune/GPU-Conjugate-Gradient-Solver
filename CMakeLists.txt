@@ -92,14 +92,19 @@ if(APPLE)
             src/DeviceELLMatrix.cc
             src/HostELLMatrix.cc
             src/GraphColoring.cc
+            src/BlockUtils.cc
             src/Preconditioners/IdentityPreconditioner.cc
             src/Preconditioners/MetalJacobiPreconditioner.cc
             src/Preconditioners/DampedJacobiPreconditioner.cc
             src/Preconditioners/MultigridDampedJacobiPreconditioner.cc
             src/Preconditioners/SymmetricGaussSeidelPreconditioner.cc
             src/Preconditioners/MultigridGaussSeidelPreconditioner.cc
+            src/Preconditioners/BlockJacobiPreconditioner.cc 
+            src/Preconditioners/BlockGaussSeidelPreconditioner.cc
             src/SparseMatrixUtils.cc
             src/Smoothers/DampedJacobiSmoother.cc
+            src/Smoothers/BlockJacobiSmoother.cc
+            src/Smoothers/BlockGaussSeidelSmoother.cc
             src/Smoothers/SymmetricGaussSeidelSmoother.cc
             src/Smoothers/MultigridSmoother.cc
     )
@@ -137,6 +142,14 @@ if(APPLE)
       "${PROJECT_SOURCE_DIR}/kernels/GaussSeidelColoringKernels.metal"
     )
 
+    set(GPUSOLVER_METAL_BLOCK_JACOBI_SOURCE
+      "${PROJECT_SOURCE_DIR}/kernels/Invert3x3Diagonal.metal"
+    )
+
+    set(GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_SOURCE
+      "${PROJECT_SOURCE_DIR}/kernels/GaussSeidelBlock3x3.metal"
+    )
+
     set(GPUSOLVER_METAL_OUTPUT_DIR
         "${CMAKE_BINARY_DIR}/metal"
     )
@@ -158,6 +171,13 @@ if(APPLE)
     )
     set(GPUSOLVER_METAL_GAUSS_SEIDEL_AIR
       "${GPUSOLVER_METAL_OUTPUT_DIR}/gaussSeidel.air"
+    )
+
+    set(GPUSOLVER_METAL_BLOCK_JACOBI_AIR
+      "${GPUSOLVER_METAL_OUTPUT_DIR}/blockJacobi.air"
+    )
+    set(GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_AIR
+      "${GPUSOLVER_METAL_OUTPUT_DIR}/blockGaussSeidel.air"
     )
 
     set(GPUSOLVER_METAL_LIBRARY
@@ -292,6 +312,54 @@ if(APPLE)
     )
 
     # ------------------------------------------------------------
+    # Compile BlockJacobiKernels.metal -> blockJacobi.air
+    # ------------------------------------------------------------
+
+    add_custom_command(
+        OUTPUT
+        ${GPUSOLVER_METAL_BLOCK_JACOBI_AIR}
+
+        COMMAND
+            xcrun
+            -sdk macosx
+            metal
+            -c
+            ${GPUSOLVER_METAL_BLOCK_JACOBI_SOURCE}
+            -o
+            ${GPUSOLVER_METAL_BLOCK_JACOBI_AIR}
+
+        DEPENDS
+        ${GPUSOLVER_METAL_BLOCK_JACOBI_SOURCE}
+
+        COMMENT
+        "Compiling Metal block jacobi kernels"
+    )
+
+    # ------------------------------------------------------------
+    # Compile BlockGaussSeidel.metal -> blockGaussSeidel.air
+    # ------------------------------------------------------------
+
+    add_custom_command(
+        OUTPUT
+        ${GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_AIR}
+
+        COMMAND
+            xcrun
+            -sdk macosx
+            metal
+            -c
+            ${GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_SOURCE}
+            -o
+            ${GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_AIR}
+
+        DEPENDS
+        ${GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_SOURCE}
+
+        COMMENT
+        "Compiling Metal block gauss seidel kernels"
+    )
+
+    # ------------------------------------------------------------
     # Link all AIR files into one metallib
     # ------------------------------------------------------------
 
@@ -308,6 +376,8 @@ if(APPLE)
             ${GPUSOLVER_METAL_REDUCTION_AIR}
             ${GPUSOLVER_METAL_SCALAR_AIR}
             ${GPUSOLVER_METAL_GAUSS_SEIDEL_AIR}
+            ${GPUSOLVER_METAL_BLOCK_JACOBI_AIR}
+            ${GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_AIR}
             -o
             ${GPUSOLVER_METAL_LIBRARY}
 
@@ -317,6 +387,9 @@ if(APPLE)
             ${GPUSOLVER_METAL_REDUCTION_AIR}
             ${GPUSOLVER_METAL_SCALAR_AIR}
             ${GPUSOLVER_METAL_GAUSS_SEIDEL_AIR}
+            ${GPUSOLVER_METAL_BLOCK_JACOBI_AIR}
+            ${GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_AIR}
+
 
         COMMENT
             "Linking Metal library gpuSolver.metallib"

@@ -55,6 +55,12 @@ gpuSolver::AMGHierarchy buildAmgclSmoothedAggregationHierarchy(
     int maxLevels = 10,
     int minDofs = 1000);
 
+gpuSolver::AMGHierarchy buildAmgclBlockSmoothedAggregationHierarchy(
+    const Eigen::SparseMatrix<float, Eigen::RowMajor>& A0,
+    int blockSize,
+    int maxLevels = 10,
+    int minDofs = 1000);
+
 // Just the chain of restriction operators (finest -> coarsest) for a single
 // matrix, via smoothed aggregation, stopping once at most maxVertices rows
 // remain.
