@@ -2,6 +2,7 @@
 
 #include "../Preconditioner.h"
 #include "GPUSolver/Smoother.h"
+#include <GPUSolver/Smoothers/SymmetricGaussSeidelSmoother.h>
 
 #include <cstddef>
 #include <vector>
@@ -22,6 +23,7 @@ private:
     std::size_t nbOfReps = 1;
 
     Smoother* smoother = nullptr;
+    // SymmetricGaussSeidelSmoother smoother;
 
     float omega_;
 
@@ -52,6 +54,10 @@ public:
         const DeviceVector& input,
         DeviceVector& output
     ) override;
+
+
+
+    
 
 };
 

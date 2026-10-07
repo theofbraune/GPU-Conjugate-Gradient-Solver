@@ -2,7 +2,9 @@
 #include "LinearElasticity.h"
 
 #include "AMGUtils/AMGHierarchyBuilder.h"
+#include <AMGUtils/SmoothedAggregationCoarsener.h>
 
+#include <Eigen/SparseCholesky>
 #include <GPUSolver/AMGHierarchy.h>
 #include <GPUSolver/BlockUtils.h>
 #include <GPUSolver/CGSolver.h>
@@ -161,7 +163,7 @@ int main(int argc, char **argv) {
             << "  tets     = " << T.rows() << "\n";
   constexpr double youngModulus = 1.0e5;
 
-  constexpr double poissonRatio = 0.30;
+  constexpr double poissonRatio = 0.40;
 
   const double mu = youngModulus / (2.0 * (1.0 + poissonRatio));
 
@@ -269,12 +271,23 @@ int main(int argc, char **argv) {
 
   constexpr float tolerance = 1.0e-4f;
 
-  constexpr std::size_t maxIterations = 3000;
+  constexpr std::size_t maxIterations = 1000;
 
-  gpuSolver::AMGHierarchy hierarchy =
-      MGBuilder::buildAmgclBlockSmoothedAggregationHierarchy(A, 3);
+  gpuSolver::SmoothedAggregationCoarsener coarsener(3, 0.1f);
 
-  std::vector<gpuSolver::Permutation> mgPermutations = buildBlockRCMPermutationsForHierarchy(hierarchy,3);
+  gpuSolver::AMGHierarchyBuilder builder(coarsener, 10, 1000);
+
+  gpuSolver::AMGHierarchy hierarchy = builder.build(A);
+
+  // gpuSolver::AMGHierarchy hierarchy =
+  //     MGBuilder::buildAmgclBlockSmoothedAggregationHierarchy(A, 3);
+  for (auto A : hierarchy.A) {
+    std::cout << " the size of the matrix is " << A.rows() << " x " << A.cols()
+              << std::endl;
+  }
+
+  std::vector<gpuSolver::Permutation> mgPermutations =
+      buildBlockRCMPermutationsForHierarchy(hierarchy, 3);
   BenchmarkResult scalarJacobi;
 
   {
@@ -310,7 +323,7 @@ int main(int argc, char **argv) {
 
     scalarGS = runBenchmark("Scalar symmetric GS", solver, A, b, setupMs);
   }
-
+  /*
   BenchmarkResult blockJacobi;
 
   {
@@ -347,6 +360,7 @@ int main(int argc, char **argv) {
     blockGS = runBenchmark("3x3 block symmetric GS", solver, A, b, setupMs);
   }
 
+  */
   const Clock::time_point hierarchyStart = Clock::now();
 
   const double hierarchyMs = elapsedMs(hierarchyStart, Clock::now());
@@ -390,6 +404,7 @@ int main(int argc, char **argv) {
   }
   */
 
+  /*
   BenchmarkResult mgSGS;
 
   {
@@ -408,7 +423,8 @@ int main(int argc, char **argv) {
     mgSGS = runBenchmark("MG + gauss seidel", solver, A, b, setupMs);
   }
 
-  /*
+
+
   BenchmarkResult mgBlockSGS;
 
   {
@@ -426,7 +442,7 @@ int main(int argc, char **argv) {
 
     mgBlockSGS = runBenchmark("MG + gauss seidel", solver, A, b, setupMs);
   }
-  */
+
 
   std::vector<BenchmarkResult> results = {
       scalarJacobi,   scalarGS,   blockJacobi,   blockGS,
@@ -470,8 +486,12 @@ int main(int argc, char **argv) {
                "================================\n";
 
   std::cout << "AMG hierarchy construction = " << hierarchyMs << " ms\n";
+  */
+  Eigen::VectorXd constrainedSolution = mgScalarJacobi.solution.cast<double>();
+  // Eigen::SimplicialLDLT<Eigen::SparseMatrix<double, Eigen::RowMajor>>
+  // lltA(Kdouble);
 
-  Eigen::VectorXd constrainedSolution = blockGS.solution.cast<double>();
+  // Eigen::VectorXd constrainedSolution = lltA.solve(forceDouble);
 
   Eigen::VectorXd fullSolution =
       simulator.liftConstrainedToFull(constrainedSolution);
@@ -512,4 +532,3 @@ int main(int argc, char **argv) {
 
   return 0;
 }
-

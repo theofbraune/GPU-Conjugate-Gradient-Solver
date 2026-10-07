@@ -62,6 +62,20 @@ HostCSRMatrix::HostCSRMatrix(std::size_t nRows, std::size_t nCols,
   this->applyPermutation(permutation);
 }
 
+HostCSRMatrix::HostCSRMatrix(const Eigen::SparseMatrix<float, Eigen::RowMajor>& A){
+  const int* rowPtrA = A.innerIndexPtr();
+  const int* colPtrA = A.outerIndexPtr();
+  const float* valPtrA = A.valuePtr();
+  std::size_t nRowsA = A.rows();
+  std::size_t nColsA = A.cols();
+  std::size_t nnzA = A.nonZeros();
+  HostCSRMatrix(nRowsA, nColsA, nnzA, rowPtrA, colPtrA, valPtrA);
+}
+
+HostCSRMatrix::HostCSRMatrix(const Eigen::SparseMatrix<float, Eigen::RowMajor>& A, const Permutation& permutation): HostCSRMatrix(A){
+  this->applyPermutation(permutation);
+}
+
 HostCSRMatrix::~HostCSRMatrix() {
 
   delete[] rowPtr_;

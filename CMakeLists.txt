@@ -41,6 +41,7 @@ option(GPUSOLVER_BUILD_TESTS    "Build gpuSolver tests" ON)
 # ------------------------------------------------------------
 
 include(eigen)
+include(glog)
 
 if(APPLE)
     include(metal)
@@ -101,6 +102,8 @@ if(APPLE)
             src/Preconditioners/MultigridGaussSeidelPreconditioner.cc
             src/Preconditioners/BlockJacobiPreconditioner.cc 
             src/Preconditioners/BlockGaussSeidelPreconditioner.cc
+            src/Preconditioners/MultigridBlockGaussSeidelPreconditioner.cc
+            src/Preconditioners/MultigridBlockJacobiPreconditioner.cc
             src/SparseMatrixUtils.cc
             src/Smoothers/DampedJacobiSmoother.cc
             src/Smoothers/BlockJacobiSmoother.cc
@@ -112,6 +115,7 @@ if(APPLE)
     target_link_libraries(gpuSolver
         PRIVATE
             metal::metal
+            glog::glog
     )
 
     target_compile_definitions(gpuSolver

@@ -188,7 +188,7 @@ MetalBackend::MetalBackend(MetalContext &context) {
   impl_->invertBlockDiagonalPipeline = makePipeline(
       context.device(), context.library(), "invert3x3BlockDiagonal");
 
-  impl_->gaussSeidelColorPipeline = makePipeline(
+  impl_->blockGaussSeidelColor3x3Pipeline = makePipeline(
       context.device(), context.library(), "blockGaussSeidelColor3x3");
 }
 

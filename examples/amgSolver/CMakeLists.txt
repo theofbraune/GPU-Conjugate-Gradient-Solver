@@ -11,6 +11,7 @@ include(amgcl)
 
 add_library(gpuSolverAMG STATIC
     src/AMGHierarchyBuilder.cc
+    src/SmoothedAggregationCoarsener.cc
 )
 
 add_library(gpuSolverAMG::gpuSolverAMG ALIAS gpuSolverAMG)

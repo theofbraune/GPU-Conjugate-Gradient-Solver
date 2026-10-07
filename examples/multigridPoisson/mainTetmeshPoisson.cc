@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "AMGUtils/AMGHierarchyBuilder.h"
+#include <AMGUtils/SmoothedAggregationCoarsener.h>
 #include "GPUSolver/AMGHierarchy.h"
 #include <GPUSolver/CGSolver.h>
 #include <GPUSolver/Permutation.h>
@@ -279,7 +280,8 @@ int main(int argc, char **argv) {
     HeatSource source;
 
     // source.center = static_cast<Eigen::Vector3f>(V.row(vertex).transpose());
-    source.center = Eigen::Vector3f(float(V(vertex, 0)), float(V(vertex, 1)),float(V(vertex, 2)));
+    source.center = Eigen::Vector3f(float(V(vertex, 0)), float(V(vertex, 1)),
+                                    float(V(vertex, 2)));
     source.peak = peakDist(rng);
     source.sigma = sigmaDist(rng);
 
@@ -303,9 +305,10 @@ int main(int argc, char **argv) {
       continue;
     }
 
-    const Eigen::Vector3f position = Eigen::Vector3f(float(V(i, 0)), float(V(i, 1)),float(V(i, 2)));
+    const Eigen::Vector3f position =
+        Eigen::Vector3f(float(V(i, 0)), float(V(i, 1)), float(V(i, 2)));
 
-      V.row(i).transpose();
+    V.row(i).transpose();
 
     float temperature = 0.0;
 
@@ -407,13 +410,11 @@ int main(int argc, char **argv) {
   std::cout << "\nBuilding AMG hierarchy...\n";
 
   const Clock::time_point hierarchyStart = Clock::now();
+  gpuSolver::SmoothedAggregationCoarsener coarsener(1, 0.1f);
 
-  gpuSolver::AMGHierarchy hierarchyForA =
-      MGBuilder::buildAmgclScalarSmoothedAggregationHierarchy(
-          K_reduced,
-          10,  // Maximum number of levels
-          5000 // Coarsest-level DOF threshold
-      );
+  gpuSolver::AMGHierarchyBuilder builder(coarsener, 10, 1000);
+
+  gpuSolver::AMGHierarchy hierarchyForA = builder.build(K_reduced);
 
   const double hierarchyTime = elapsedMs(hierarchyStart, Clock::now());
 

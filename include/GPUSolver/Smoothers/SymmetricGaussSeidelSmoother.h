@@ -28,25 +28,21 @@ public:
 
   ~SymmetricGaussSeidelSmoother() override;
 
-  SymmetricGaussSeidelSmoother(
-      const SymmetricGaussSeidelSmoother &) = delete;
+  SymmetricGaussSeidelSmoother(const SymmetricGaussSeidelSmoother &) = delete;
 
-  SymmetricGaussSeidelSmoother &operator=(
-      const SymmetricGaussSeidelSmoother &) = delete;
+  SymmetricGaussSeidelSmoother &
+  operator=(const SymmetricGaussSeidelSmoother &) = delete;
 
-  void initialize(
-      Backend &backend,
-      const HostCSRMatrix &hostMatrix,
-      const DeviceCSRMatrix &deviceMatrix
-  ) override;
+  void initialize(Backend &backend, const HostCSRMatrix &hostMatrix,
+                  const DeviceCSRMatrix &deviceMatrix) override;
 
-  void smooth(
-      Backend &backend,
-      BackendEncoder &encoder,
-      const DeviceVector &rhs,
-      DeviceVector &solution,
-      std::size_t iterations
-  ) override;
+  void smooth(Backend &backend, BackendEncoder &encoder,
+              const DeviceVector &rhs, DeviceVector &solution,
+              std::size_t iterations) override;
+
+  const DeviceIndexVector &colorVertices() const { return *colorVertices_; }
+
+  const std::vector<int> &colorOffsets() const { return colorOffsets_; }
 };
 
 } // namespace gpuSolver

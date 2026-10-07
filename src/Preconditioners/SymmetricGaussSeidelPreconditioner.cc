@@ -34,7 +34,7 @@ void SymmetricGaussSeidelPreconditioner::apply(Backend &backend,
 
   backend.encodeSetZero(encoder, output);
 
-  this->smoother->smooth(backend, encoder, input, output, 1);
+  this->smoother->smooth(backend, encoder, input, output, this->nbOfReps);
 }
 
 SymmetricGaussSeidelPreconditioner::~SymmetricGaussSeidelPreconditioner() {

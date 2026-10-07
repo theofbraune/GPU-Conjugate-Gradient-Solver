@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Eigen/SparseCore>
 #include <cstddef>
+#include <Eigen/Sparse>
 
 namespace gpuSolver {
 
@@ -31,6 +33,10 @@ private:
 public:
   HostCSRMatrix(std::size_t nRows, std::size_t nCols, std::size_t nnz,
                 const int *rowPtr, const int *colIdxPtr, const float *valPtr);
+
+  HostCSRMatrix(const Eigen::SparseMatrix<float, Eigen::RowMajor>& A);
+
+  HostCSRMatrix(const Eigen::SparseMatrix<float, Eigen::RowMajor>& A, const Permutation& permutation);
 
   HostCSRMatrix(std::size_t nRows, std::size_t nCols, std::size_t nnz,
                 const int *rowPtr, const int *colIdxPtr, const float *valPtr, const Permutation& permutation);

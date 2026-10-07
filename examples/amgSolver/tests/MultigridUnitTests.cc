@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <AMGUtils/AMGHierarchyBuilder.h>
+#include <AMGUtils/SmoothedAggregationCoarsener.h>
 
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
@@ -223,8 +224,12 @@ AMGHierarchy buildHierarchy() {
   const Matrix A = buildVectorLaplacian(nx, ny, nz);
 
   const Matrix M = buildMassMatrix(static_cast<std::size_t>(A.rows()));
+  gpuSolver::SmoothedAggregationCoarsener coarsener(1, 0.1f);
 
-  return MGBuilder::buildAmgclSmoothedAggregationHierarchy(A, M, V, 10, 50);
+  gpuSolver::AMGHierarchyBuilder builder(coarsener, 10, 1000);
+
+  gpuSolver::AMGHierarchy hierarchy = builder.build(A);
+  return hierarchy;
 }
 
 // ============================================================
