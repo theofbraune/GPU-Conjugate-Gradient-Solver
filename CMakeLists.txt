@@ -104,6 +104,7 @@ if(APPLE)
             src/Preconditioners/BlockGaussSeidelPreconditioner.cc
             src/Preconditioners/MultigridBlockGaussSeidelPreconditioner.cc
             src/Preconditioners/MultigridBlockJacobiPreconditioner.cc
+            src/Preconditioners/MultigridHybridBlockPreconditioner.cc
             src/SparseMatrixUtils.cc
             src/Smoothers/DampedJacobiSmoother.cc
             src/Smoothers/BlockJacobiSmoother.cc

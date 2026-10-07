@@ -15,7 +15,12 @@ class DeviceCSRMatrix;
 
 class MultigridSmoother : public Smoother {
 public:
-  enum class SmootherType { DampedJacobi, SymmetricGaussSeidel, BlockJacobi, BlockGaussSeidel };
+  enum class SmootherType {
+    DampedJacobi,
+    SymmetricGaussSeidel,
+    BlockJacobi,
+    BlockGaussSeidel
+  };
 
 private:
   struct Level {
@@ -48,6 +53,14 @@ public:
   MultigridSmoother(Backend &backend, const AMGHierarchy &hierarchy,
                     const std::vector<Permutation> &permutations,
                     SmootherType smootherType, std::size_t preSmoothingSteps,
+                    std::size_t postSmoothingSteps,
+                    std::size_t coarseSmoothingSteps, float omega);
+
+  MultigridSmoother(Backend &backend, const AMGHierarchy &hierarchy,
+                    const std::vector<Permutation> &permutations,
+                    SmootherType fineSmootherType,
+                    SmootherType coarseSmootherType,
+                    std::size_t preSmoothingSteps,
                     std::size_t postSmoothingSteps,
                     std::size_t coarseSmoothingSteps, float omega);
 

@@ -1,4 +1,3 @@
-//
 // Purpose:
 //   Debug the elasticity solver stack in the simplest possible order.
 //
@@ -31,6 +30,7 @@
 #include "GPUSolver/Permutation.h"
 #include "GPUSolver/Preconditioner.h"
 #include "GPUSolver/Smoothers/BlockJacobiSmoother.h"
+#include "GPUSolver/Smoothers/MultigridSmoother.h"
 #include "LinearElasticity.h"
 
 #include <Eigen/SparseCore>
@@ -52,6 +52,7 @@
 #include <GPUSolver/Preconditioners/MultigridGaussSeidelPreconditioner.h>
 
 #include <GPUSolver/AMGHierarchy.h>
+#include <GPUSolver/ReorderingStrategies/IdentityReordering.h>
 #include <GPUSolver/ReorderingStrategies/RCMReordering.h>
 #include <GPUSolver/metal/MetalBackend.h>
 #include <GPUSolver/metal/MetalContext.h>
@@ -97,6 +98,40 @@ struct ElasticityProblem {
   Eigen::VectorXd reference;
 };
 
+std::vector<gpuSolver::Permutation> buildIdentityPermutationsForHierarchy(
+    const gpuSolver::AMGHierarchy &hierarchy) {
+  std::vector<gpuSolver::Permutation> permutations;
+
+  permutations.reserve(hierarchy.A.size());
+
+  gpuSolver::IdentityReordering idReordering;
+
+  for (std::size_t level = 0; level < hierarchy.A.size(); ++level) {
+    const gpuSolver::AMGHierarchy::Matrix &A = hierarchy.A[level];
+
+    const std::size_t nRows = static_cast<std::size_t>(A.rows());
+
+    if (A.rows() != A.cols()) {
+      throw std::runtime_error("buildRCMPermutationsForHierarchy: "
+                               "Galerkin matrix is not square.");
+    }
+
+    int *oldToNew = new int[nRows];
+
+    int *newToOld = new int[nRows];
+
+    idReordering.compute(nRows, A.outerIndexPtr(), A.innerIndexPtr(), oldToNew,
+                         newToOld);
+
+    permutations.emplace_back(nRows, oldToNew, newToOld);
+
+    delete[] oldToNew;
+    delete[] newToOld;
+  }
+
+  return permutations;
+}
+
 // -----------------------------------------------------------------------------
 // Small host-side diagnostics.
 // -----------------------------------------------------------------------------
@@ -135,7 +170,7 @@ ElasticityProblem buildProblem(const std::string &meshPath) {
             << "  tets     = " << problem.T.rows() << "\n";
 
   constexpr double youngModulus = 1.0e5;
-  constexpr double poissonRatio = 0.30;
+  constexpr double poissonRatio = 0.29;
 
   const double mu = youngModulus / (2.0 * (1.0 + poissonRatio));
 
@@ -277,6 +312,30 @@ buildBlockRCMPermutation(const Eigen::SparseMatrix<float, Eigen::RowMajor> &A) {
   return gpuSolver::expandBlockPermutation(nodePermutation, numberOfNodes, 3);
 }
 
+std::vector<gpuSolver::Permutation> buildBlockRCMPermutationsForHierarchy(
+    const gpuSolver::AMGHierarchy &hierarchy) {
+  std::vector<gpuSolver::Permutation> permutations;
+
+  permutations.reserve(hierarchy.A.size());
+
+  for (std::size_t level = 0; level < hierarchy.A.size(); ++level) {
+
+    const gpuSolver::AMGHierarchy::Matrix &A = hierarchy.A[level];
+
+    gpuSolver::Permutation permutation = buildBlockRCMPermutation(A);
+
+    // checkBlockPermutation(permutation, static_cast<std::size_t>(A.rows() /
+    // 3));
+
+    const int* oldToNewPerm = permutation.oldToNew();
+    const int* newToOldPerm = permutation.newToOld();
+    size_t size = permutation.size();
+    permutations.emplace_back(size,oldToNewPerm,newToOldPerm);
+  }
+
+  return permutations;
+}
+
 void checkBlockPermutation(const gpuSolver::Permutation &permutation,
                            std::size_t numberOfNodes) {
   const int *oldToNew = permutation.oldToNew();
@@ -310,6 +369,7 @@ void checkBlockPermutation(const gpuSolver::Permutation &permutation,
 
   std::cout << "Block permutation check: PASS\n";
 }
+
 Eigen::SparseMatrix<float, Eigen::RowMajor>
 permuteEigenSparseMatrix(const Eigen::SparseMatrix<float, Eigen::RowMajor> &A,
                          const gpuSolver::Permutation &permutation) {
@@ -387,6 +447,159 @@ permuteVectorOldToNew(const Eigen::VectorXd &x,
   }
 
   return xPermuted;
+}
+
+//---------------------------
+// AMG checker
+//---------------------------
+//
+
+void inspectElasticityHierarchy(const gpuSolver::AMGHierarchy &hierarchy,
+                                std::size_t blockSize) {
+  std::cout
+      << "\n============================================================\n"
+      << "[ELASTICITY AMG HIERARCHY CHECK]\n"
+      << "============================================================\n";
+
+  if (hierarchy.A.empty()) {
+    throw std::runtime_error("Hierarchy contains no levels.");
+  }
+
+  if (hierarchy.P.size() + 1 != hierarchy.A.size()) {
+    throw std::runtime_error(
+        "Hierarchy has inconsistent number of prolongation matrices.");
+  }
+
+  if (hierarchy.R.size() + 1 != hierarchy.A.size()) {
+    throw std::runtime_error(
+        "Hierarchy has inconsistent number of restriction matrices.");
+  }
+
+  std::cout << "number of levels = " << hierarchy.A.size() << "\n";
+
+  for (std::size_t level = 0; level < hierarchy.A.size(); ++level) {
+
+    const auto &A = hierarchy.A[level];
+
+    std::cout
+        << "\n------------------------------------------------------------\n"
+        << "level " << level << "\n"
+        << "------------------------------------------------------------\n";
+
+    std::cout << "A: " << A.rows() << " x " << A.cols()
+              << ", nnz = " << A.nonZeros() << "\n";
+
+    if (A.rows() != A.cols()) {
+      throw std::runtime_error("Coarse matrix is not square.");
+    }
+
+    if (A.rows() % static_cast<int>(blockSize) != 0) {
+      throw std::runtime_error("Coarse level is not divisible by block size.");
+    }
+
+    const std::size_t numberOfBlocks =
+        static_cast<std::size_t>(A.rows()) / blockSize;
+
+    std::cout << "block nodes = " << numberOfBlocks << "\n";
+
+    // ----------------------------------------------------------
+    // Check nullspace dimensions, if stored.
+    // ----------------------------------------------------------
+
+    if (level < hierarchy.nullspaces.size()) {
+
+      const Eigen::MatrixXf &nullspace = hierarchy.nullspaces[level];
+
+      std::cout << "near-nullspace: " << nullspace.rows() << " x "
+                << nullspace.cols() << "\n";
+
+      if (nullspace.rows() != A.rows()) {
+        throw std::runtime_error(
+            "Near-nullspace row count does not match level matrix.");
+      }
+    }
+
+    // ----------------------------------------------------------
+    // Check 3x3 diagonal blocks.
+    // ----------------------------------------------------------
+
+    Eigen::SparseMatrix<float, Eigen::RowMajor> matrix = A;
+
+    matrix.makeCompressed();
+
+    gpuSolver::HostCSRMatrix hostMatrix(
+        static_cast<std::size_t>(matrix.rows()),
+        static_cast<std::size_t>(matrix.cols()),
+        static_cast<std::size_t>(matrix.nonZeros()), matrix.outerIndexPtr(),
+        matrix.innerIndexPtr(), matrix.valuePtr());
+
+    try {
+
+      std::vector<float> inverseBlocks =
+          gpuSolver::extractInverseDiagonalBlocks3x3(hostMatrix);
+
+      std::cout << "3x3 block diagonal inversion: PASS"
+                << " (" << inverseBlocks.size() / 9 << " blocks)\n";
+
+    } catch (const std::exception &exception) {
+
+      std::cout << "3x3 block diagonal inversion: FAIL\n"
+                << "  " << exception.what() << "\n";
+
+      throw;
+    }
+
+    // ----------------------------------------------------------
+    // Check transfer operators.
+    // ----------------------------------------------------------
+
+    if (level + 1 < hierarchy.A.size()) {
+
+      const auto &P = hierarchy.P[level];
+
+      const auto &R = hierarchy.R[level];
+
+      const auto &ACoarse = hierarchy.A[level + 1];
+
+      std::cout << "P: " << P.rows() << " x " << P.cols()
+                << ", nnz = " << P.nonZeros() << "\n";
+
+      std::cout << "R: " << R.rows() << " x " << R.cols()
+                << ", nnz = " << R.nonZeros() << "\n";
+
+      if (P.rows() != A.rows()) {
+        throw std::runtime_error("P rows do not match fine level.");
+      }
+
+      if (P.cols() != ACoarse.rows()) {
+        throw std::runtime_error("P columns do not match coarse level.");
+      }
+
+      if (R.rows() != ACoarse.rows()) {
+        throw std::runtime_error("R rows do not match coarse level.");
+      }
+
+      if (R.cols() != A.rows()) {
+        throw std::runtime_error("R columns do not match fine level.");
+      }
+
+      if (P.rows() % static_cast<int>(blockSize) != 0 ||
+          P.cols() % static_cast<int>(blockSize) != 0) {
+
+        throw std::runtime_error("Prolongation dimensions are incompatible "
+                                 "with block size.");
+      }
+
+      if (R.rows() % static_cast<int>(blockSize) != 0 ||
+          R.cols() % static_cast<int>(blockSize) != 0) {
+
+        throw std::runtime_error("Restriction dimensions are incompatible "
+                                 "with block size.");
+      }
+    }
+  }
+
+  std::cout << "\nElasticity AMG hierarchy check: PASS\n";
 }
 
 void testSingleGaussSeidelColorWrite(
@@ -572,6 +785,7 @@ void testSingleGaussSeidelColorWrite(
 void testOnePreconditionerApplication(const std::string &name,
                                       gpuSolver::Backend &backend,
                                       gpuSolver::Preconditioner &preconditioner,
+                                      const gpuSolver::AMGHierarchy &hierarchy,
                                       const SpMatF &A, const Eigen::VectorXf &b,
                                       const Eigen::VectorXd &reference) {
 
@@ -605,7 +819,10 @@ void testOnePreconditionerApplication(const std::string &name,
             << ", min=" << bDeviceMap.minCoeff()
             << ", max=" << bDeviceMap.maxCoeff() << "\n";
 
+  std::vector<gpuSolver::Permutation> idPerms =
+      buildIdentityPermutationsForHierarchy(hierarchy);
   for (std::size_t steps : {1, 2, 4, 8, 16}) {
+
     LOG(INFO) << " steps are " << steps;
     gpuSolver::DeviceVector *deviceZ =
         backend.createVector(static_cast<std::size_t>(b.size()));
@@ -619,16 +836,21 @@ void testOnePreconditionerApplication(const std::string &name,
     LOG(INFO) << " encoder memory allocated";
     backend.encodeCopy(*encoder, *deviceB, *deviceZ);
     backend.encodeSetZero(*encoder, *deviceZ);
-    gpuSolver::BlockJacobiSmoother smoother =
-        gpuSolver::BlockJacobiSmoother(0.7f);
-    smoother.initialize(backend, hostA, *deviceA);
+
+    gpuSolver::MultigridSmoother smoother = gpuSolver::MultigridSmoother(
+        backend, hierarchy, idPerms,
+        gpuSolver::MultigridSmoother::SmootherType::BlockJacobi, steps, steps,
+        steps, 0.4f);
+    // gpuSolver::BlockJacobiSmoother smoother =
+    //     gpuSolver::BlockJacobiSmoother(0.7f);
+    // smoother.initialize(backend, hostA, *deviceA);
     // testSingleGaussSeidelColorWrite(backend,hostA,deviceA,)
     // apply() should set/reset z itself if that is part of your
     // Preconditioner contract.
     // backend.encodeSetZero(*encoder, *deviceZ);
-
     // &smoother.smooth(backend, *encoder, *deviceB, *deviceZ, steps);
     smoother.smooth(backend, *encoder, *deviceB, *deviceZ, steps);
+
     // preconditioner.apply(backend, *encoder, *deviceB, *deviceZ);
     LOG(INFO) << " preconditioner: check ";
 
@@ -703,6 +925,201 @@ void testCG(const std::string &name, gpuSolver::Backend &backend,
             << "  solution error = " << relativeSolutionError(x, reference)
             << "\n"
             << std::defaultfloat;
+}
+
+void testCGWithPermutation(const std::string &name, gpuSolver::Backend &backend,
+                           gpuSolver::Preconditioner &preconditioner,
+                           const SpMatF &A, const Eigen::VectorXf &b,
+                           const Eigen::VectorXd &reference,
+                           const gpuSolver::Permutation &permutation,
+                           std::size_t maxIterations = 200) {
+  std::cout
+      << "\n============================================================\n"
+      << "[CG + PERMUTATION TEST] " << name << "\n"
+      << "============================================================\n";
+
+  gpuSolver::CGSolver solver(backend, preconditioner, A, permutation);
+
+  solver.setTolerance(1.0e-4f);
+  solver.setMaxIterations(maxIterations);
+
+  Eigen::VectorXf x = Eigen::VectorXf::Zero(A.rows());
+
+  solver.solve(b, x);
+
+  printVectorSanity("x", x);
+
+  std::cout << "  iterations = " << solver.getNbOfIterations() << "\n"
+            << std::scientific
+            << "  true residual = " << relativeResidual(A, x, b) << "\n"
+            << "  solution error = " << relativeSolutionError(x, reference)
+            << "\n"
+            << std::defaultfloat;
+}
+
+void testElasticityAMGHierarchy(
+    const Eigen::SparseMatrix<float, Eigen::RowMajor> &A) {
+  std::cout
+      << "\n============================================================\n"
+      << "[ELASTICITY AMG HIERARCHY TEST]\n"
+      << "============================================================\n";
+
+  if (A.rows() != A.cols()) {
+    throw std::runtime_error("Elasticity AMG test requires a square matrix.");
+  }
+
+  if (A.rows() % 3 != 0) {
+    throw std::runtime_error(
+        "Elasticity AMG test requires number of DOFs divisible by 3.");
+  }
+
+  // ------------------------------------------------------------
+  // Build hierarchy.
+  //
+  // No near-nullspace here:
+  // the pinned elasticity problem is SPD.
+  // ------------------------------------------------------------
+
+  gpuSolver::SmoothedAggregationCoarsener coarsener(3,     // block size
+                                                    0.1f); // epsStrong
+
+  gpuSolver::AMGHierarchyBuilder builder(coarsener,
+                                         10,    // max levels
+                                         1000); // minimum number of DOFs
+
+  gpuSolver::AMGHierarchy hierarchy = builder.build(A);
+
+  // ------------------------------------------------------------
+  // Basic hierarchy consistency.
+  // ------------------------------------------------------------
+
+  if (hierarchy.A.empty()) {
+    throw std::runtime_error("AMG hierarchy contains no levels.");
+  }
+
+  if (hierarchy.P.size() + 1 != hierarchy.A.size()) {
+    throw std::runtime_error("Wrong number of prolongation matrices.");
+  }
+
+  if (hierarchy.R.size() + 1 != hierarchy.A.size()) {
+    throw std::runtime_error("Wrong number of restriction matrices.");
+  }
+
+  std::cout << "number of levels = " << hierarchy.A.size() << "\n";
+
+  // ------------------------------------------------------------
+  // Inspect every level.
+  // ------------------------------------------------------------
+
+  for (std::size_t level = 0; level < hierarchy.A.size(); ++level) {
+
+    const gpuSolver::AMGHierarchy::Matrix &levelMatrix = hierarchy.A[level];
+
+    std::cout
+        << "\n------------------------------------------------------------\n"
+        << "level " << level << "\n"
+        << "------------------------------------------------------------\n";
+
+    std::cout << "A = " << levelMatrix.rows() << " x " << levelMatrix.cols()
+              << "\n";
+
+    std::cout << "nnz = " << levelMatrix.nonZeros() << "\n";
+
+    if (levelMatrix.rows() != levelMatrix.cols()) {
+      throw std::runtime_error("AMG coarse matrix is not square.");
+    }
+
+    if (levelMatrix.rows() % 3 != 0) {
+      throw std::runtime_error(
+          "AMG coarse level does not preserve 3-DOF blocks.");
+    }
+
+    const std::size_t numberOfBlocks =
+        static_cast<std::size_t>(levelMatrix.rows()) / 3;
+
+    std::cout << "block nodes = " << numberOfBlocks << "\n";
+
+    // ----------------------------------------------------------
+    // Check that the 3x3 diagonal blocks can be extracted
+    // and inverted.
+    // ----------------------------------------------------------
+
+    Eigen::SparseMatrix<float, Eigen::RowMajor> compressedMatrix = levelMatrix;
+
+    compressedMatrix.makeCompressed();
+
+    gpuSolver::HostCSRMatrix hostMatrix(
+        static_cast<std::size_t>(compressedMatrix.rows()),
+        static_cast<std::size_t>(compressedMatrix.cols()),
+        static_cast<std::size_t>(compressedMatrix.nonZeros()),
+        compressedMatrix.outerIndexPtr(), compressedMatrix.innerIndexPtr(),
+        compressedMatrix.valuePtr());
+
+    const std::vector<float> inverseBlocks =
+        gpuSolver::extractInverseDiagonalBlocks3x3(hostMatrix);
+
+    const std::size_t expectedInverseEntries = 9 * numberOfBlocks;
+
+    if (inverseBlocks.size() != expectedInverseEntries) {
+
+      throw std::runtime_error(
+          "Wrong number of inverse diagonal block entries.");
+    }
+
+    std::cout << "3x3 diagonal blocks: PASS\n";
+
+    // ----------------------------------------------------------
+    // Inspect transfer operators to next level.
+    // ----------------------------------------------------------
+
+    if (level + 1 < hierarchy.A.size()) {
+
+      const gpuSolver::AMGHierarchy::Matrix &P = hierarchy.P[level];
+
+      const gpuSolver::AMGHierarchy::Matrix &R = hierarchy.R[level];
+
+      const gpuSolver::AMGHierarchy::Matrix &coarseMatrix =
+          hierarchy.A[level + 1];
+
+      std::cout << "P = " << P.rows() << " x " << P.cols()
+                << ", nnz = " << P.nonZeros() << "\n";
+
+      std::cout << "R = " << R.rows() << " x " << R.cols()
+                << ", nnz = " << R.nonZeros() << "\n";
+
+      if (P.rows() != levelMatrix.rows()) {
+        throw std::runtime_error("Prolongation rows do not match fine level.");
+      }
+
+      if (P.cols() != coarseMatrix.rows()) {
+        throw std::runtime_error(
+            "Prolongation columns do not match coarse level.");
+      }
+
+      if (R.rows() != coarseMatrix.rows()) {
+        throw std::runtime_error("Restriction rows do not match coarse level.");
+      }
+
+      if (R.cols() != levelMatrix.rows()) {
+        throw std::runtime_error(
+            "Restriction columns do not match fine level.");
+      }
+
+      if (P.rows() % 3 != 0 || P.cols() % 3 != 0 || R.rows() % 3 != 0 ||
+          R.cols() % 3 != 0) {
+
+        throw std::runtime_error(
+            "Transfer operators are incompatible with 3-DOF blocks.");
+      }
+
+      std::cout << "transfer dimensions: PASS\n";
+    }
+  }
+
+  std::cout
+      << "\n============================================================\n"
+      << "ELASTICITY AMG HIERARCHY TEST: PASS\n"
+      << "============================================================\n";
 }
 
 // -----------------------------------------------------------------------------
@@ -908,12 +1325,13 @@ void testBlockRCMAndBlockJacobi(
   // argument order differs.
   gpuSolver::BlockJacobiPreconditioner blockJacobi(1, 0.7f);
 
-  testOnePreconditionerApplication("3x3 block Jacobi + block RCM", backend,
-                                   blockJacobi, APermuted, bPermuted,
-                                   referencePermuted);
+  // testOnePreconditionerApplication("3x3 block Jacobi + block RCM", backend,
+  //                                  blockJacobi, APermuted, bPermuted,
+  //                                  referencePermuted);
 
   std::cout << "\nBlock RCM + Block Jacobi test completed.\n";
 }
+
 void printHierarchy(const gpuSolver::AMGHierarchy &hierarchy) {
   std::cout
       << "\n============================================================\n"
@@ -1080,8 +1498,8 @@ int main(int argc, char **argv) {
     //     MGBuilder::buildAmgclElasticityHierarchy(problem.A,
     //                                              10,    // max levels
     //                                              5000); // coarse threshold
-
-    printHierarchy(hierarchy);
+    // testElasticityAMGHierarchy(problem.A);
+    // printHierarchy(hierarchy);
     /**/
 
     // =========================================================================
@@ -1094,26 +1512,66 @@ int main(int argc, char **argv) {
     // identity permutation per level rather than introducing RCM.
     // =========================================================================
 
-    /*
+    std::vector<gpuSolver::Permutation> permutationsLevel =
+        buildIdentityPermutationsForHierarchy(hierarchy);
+
     {
       gpuSolver::MultigridBlockJacobiPreconditioner mgBlockJacobi(
-          backend,
-          hierarchy,
-          .. put identity permutations here ,
-          2,      // pre smoothing steps
-          2,      // post smoothing steps
-          4,      // coarse smoothing steps
-          0.7f);  // omega
+          backend, hierarchy, permutationsLevel,
+          2,     // pre smoothing steps
+          2,     // post smoothing steps
+          4,     // coarse smoothing steps
+          0.7f); // omega
 
-      testOnePreconditionerApplication(
-          "MG + 3x3 block Jacobi",
-          backend,
-          mgBlockJacobi,
-          problem.A,
-          problem.b,
-          problem.reference);
+      gpuSolver::MultigridDampedJacobiPreconditioner mgJacobi(
+          backend, hierarchy, permutationsLevel,
+          1,     // pre smoothing steps
+          1,     // post smoothing steps
+          1,     // coarse smoothing steps
+          0.7f); // omega
+
+      gpuSolver::MultigridBlockGaussSeidelPreconditioner mgBlockGS(
+          backend, hierarchy, permutationsLevel,
+          1,     // pre smoothing
+          1,     // post smoothing
+          1,     // coarse smoothing
+          1.0f); // omega
+      // testOnePreconditionerApplication("MG + 3x3 block Jacobi", backend,
+      //                                  mgBlockJacobi, hierarchy, problem.A,
+      //                                  problem.b, problem.reference);
+      LOG(INFO) << " do the CG test with the proper preconditioner! ";
+
+      LOG(INFO) << " start CG";
+      testCG("mg 3x3 block jacobi", backend, mgBlockJacobi, problem.A,
+             problem.b, problem.reference, 5000);
+      LOG(INFO) << " endCG";
+      LOG(INFO) << "--------------------------------";
+
+      LOG(INFO) << " start CG";
+      testCG("mg jacobi", backend, mgJacobi, problem.A, problem.b,
+             problem.reference, 1000);
+      LOG(INFO) << " endCG";
+      LOG(INFO) << "--------------------------------";
+
+      LOG(INFO) << " start CG";
+      testCG("mg 3x3 block gauss seidel - identity", backend, mgBlockGS,
+             problem.A, problem.b, problem.reference, 1000);
+      LOG(INFO) << " end CG";
+      LOG(INFO) << "--------------------------------";
+      LOG(INFO) << " start CG";
+      std::vector<gpuSolver::Permutation> blockRCM =
+          buildBlockRCMPermutationsForHierarchy(hierarchy);
+
+      gpuSolver::MultigridBlockGaussSeidelPreconditioner mgBlockGSRCM(
+          backend, hierarchy, blockRCM, 2, 2, 1, 1.0f);
+
+      testCGWithPermutation("mg 3x3 block GS - block RCM", backend,
+                            mgBlockGSRCM, problem.A, problem.b,
+                            problem.reference, blockRCM[0], 1000);
+      LOG(INFO) << " end CG";
+      LOG(INFO) << "--------------------------------";
     }
-    */
+    /**/
 
     // =========================================================================
     // STAGE 5:
