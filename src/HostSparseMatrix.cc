@@ -63,8 +63,8 @@ HostCSRMatrix::HostCSRMatrix(std::size_t nRows, std::size_t nCols,
 }
 
 HostCSRMatrix::HostCSRMatrix(const Eigen::SparseMatrix<float, Eigen::RowMajor>& A){
-  const int* rowPtrA = A.innerIndexPtr();
-  const int* colPtrA = A.outerIndexPtr();
+  const int* rowPtrA = A.outerIndexPtr();
+  const int* colPtrA = A.innerIndexPtr();
   const float* valPtrA = A.valuePtr();
   std::size_t nRowsA = A.rows();
   std::size_t nColsA = A.cols();

@@ -232,7 +232,7 @@ extractInverseDiagonalBlocks3x3(const HostCSRMatrix &matrix) {
 
   const int *colPtr = matrix.activeColPtr();
 
-  const float *values = matrix.values();
+  const float *values = matrix.activeValPtr();
 
   for (std::size_t block = 0; block < numberOfBlocks; ++block) {
 
