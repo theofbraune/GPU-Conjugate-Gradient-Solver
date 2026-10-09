@@ -16,150 +16,91 @@
 #include <random>
 #include <vector>
 
+namespace {
 
-namespace
-{
+gpuSolver::Permutation *makeRandomPermutation(std::size_t size,
+                                              unsigned int seed) {
+  int *newToOld = new int[size];
+  int *oldToNew = new int[size];
 
-gpuSolver::Permutation* makeRandomPermutation(
-    std::size_t size,
-    unsigned int seed)
-{
-    int* newToOld = new int[size];
-    int* oldToNew = new int[size];
+  for (std::size_t i = 0; i < size; ++i) {
+    newToOld[i] = static_cast<int>(i);
+  }
 
-    for (std::size_t i = 0; i < size; ++i)
-    {
-        newToOld[i] =
-            static_cast<int>(i);
-    }
+  std::mt19937 generator(seed);
 
-    std::mt19937 generator(seed);
+  std::shuffle(newToOld, newToOld + size, generator);
 
-    std::shuffle(
-        newToOld,
-        newToOld + size,
-        generator
-    );
+  // newToOld[newIndex] = oldIndex
+  //
+  // Therefore:
+  //
+  // oldToNew[oldIndex] = newIndex
+  //
+  for (std::size_t newIndex = 0; newIndex < size; ++newIndex) {
+    const int oldIndex = newToOld[newIndex];
 
-    // newToOld[newIndex] = oldIndex
-    //
-    // Therefore:
-    //
-    // oldToNew[oldIndex] = newIndex
-    //
-    for (std::size_t newIndex = 0;
-         newIndex < size;
-         ++newIndex)
-    {
-        const int oldIndex =
-            newToOld[newIndex];
+    oldToNew[oldIndex] = static_cast<int>(newIndex);
+  }
 
-        oldToNew[oldIndex] =
-            static_cast<int>(newIndex);
-    }
+  gpuSolver::Permutation *permutation =
+      new gpuSolver::Permutation(size, oldToNew, newToOld);
 
-    gpuSolver::Permutation* permutation =
-        new gpuSolver::Permutation(
-            size,
-            oldToNew,
-            newToOld
-        );
+  delete[] oldToNew;
+  delete[] newToOld;
 
-    delete[] oldToNew;
-    delete[] newToOld;
-
-    return permutation;
+  return permutation;
 }
 
+void permuteVector(const float *original, float *permuted, std::size_t size,
+                   const gpuSolver::Permutation &permutation) {
+  const int *oldToNew = permutation.oldToNew();
 
-void permuteVector(
-    const float* original,
-    float* permuted,
-    std::size_t size,
-    const gpuSolver::Permutation& permutation)
-{
-    const int* oldToNew =
-        permutation.oldToNew();
+  for (std::size_t oldIndex = 0; oldIndex < size; ++oldIndex) {
+    const int newIndex = oldToNew[oldIndex];
 
-    for (std::size_t oldIndex = 0;
-         oldIndex < size;
-         ++oldIndex)
-    {
-        const int newIndex =
-            oldToNew[oldIndex];
-
-        permuted[newIndex] =
-            original[oldIndex];
-    }
+    permuted[newIndex] = original[oldIndex];
+  }
 }
 
+void inversePermuteVector(const float *permuted, float *original,
+                          std::size_t size,
+                          const gpuSolver::Permutation &permutation) {
+  const int *newToOld = permutation.newToOld();
 
-void inversePermuteVector(
-    const float* permuted,
-    float* original,
-    std::size_t size,
-    const gpuSolver::Permutation& permutation)
-{
-    const int* newToOld =
-        permutation.newToOld();
+  for (std::size_t newIndex = 0; newIndex < size; ++newIndex) {
+    const int oldIndex = newToOld[newIndex];
 
-    for (std::size_t newIndex = 0;
-         newIndex < size;
-         ++newIndex)
-    {
-        const int oldIndex =
-            newToOld[newIndex];
-
-        original[oldIndex] =
-            permuted[newIndex];
-    }
+    original[oldIndex] = permuted[newIndex];
+  }
 }
 
-}
-
+} // namespace
 
 // ============================================================
 // First test only the permutation itself.
 // ============================================================
 
-TEST(PermutationTest, RandomPermutationIsInvertible)
-{
-    constexpr std::size_t size = 100;
+TEST(PermutationTest, RandomPermutationIsInvertible) {
+  constexpr std::size_t size = 100;
 
-    gpuSolver::Permutation* permutation =
-        makeRandomPermutation(
-            size,
-            12345
-        );
+  gpuSolver::Permutation *permutation = makeRandomPermutation(size, 12345);
 
-    const int* oldToNew =
-        permutation->oldToNew();
+  const int *oldToNew = permutation->oldToNew();
 
-    const int* newToOld =
-        permutation->newToOld();
+  const int *newToOld = permutation->newToOld();
 
-    for (std::size_t oldIndex = 0;
-         oldIndex < size;
-         ++oldIndex)
-    {
-        const int newIndex =
-            oldToNew[oldIndex];
+  for (std::size_t oldIndex = 0; oldIndex < size; ++oldIndex) {
+    const int newIndex = oldToNew[oldIndex];
 
-        EXPECT_GE(newIndex, 0);
-        EXPECT_LT(
-            newIndex,
-            static_cast<int>(size)
-        );
+    EXPECT_GE(newIndex, 0);
+    EXPECT_LT(newIndex, static_cast<int>(size));
 
-        EXPECT_EQ(
-            newToOld[newIndex],
-            static_cast<int>(oldIndex)
-        );
-    }
+    EXPECT_EQ(newToOld[newIndex], static_cast<int>(oldIndex));
+  }
 
-    delete permutation;
+  delete permutation;
 }
-
 
 // ============================================================
 // Test the complete:
@@ -174,186 +115,131 @@ TEST(PermutationTest, RandomPermutationIsInvertible)
 // pipeline.
 // ============================================================
 
-TEST(PermutationTest, MetalSpMVWithRandomPermutation)
-{
-    constexpr int n = 8;
+TEST(PermutationTest, MetalSpMVWithRandomPermutation) {
+  constexpr int n = 8;
 
-    // --------------------------------------------------------
-    // Construct a small sparse matrix.
-    //
-    // It does not need to be a Laplacian here. We mainly want
-    // a nontrivial sparsity pattern and nontrivial values.
-    // --------------------------------------------------------
+  // --------------------------------------------------------
+  // Construct a small sparse matrix.
+  //
+  // It does not need to be a Laplacian here. We mainly want
+  // a nontrivial sparsity pattern and nontrivial values.
+  // --------------------------------------------------------
 
-    std::vector<Eigen::Triplet<float>> triplets;
+  std::vector<Eigen::Triplet<float>> triplets;
 
-    triplets.emplace_back(0, 0, 4.0f);
-    triplets.emplace_back(0, 1, -1.0f);
+  triplets.emplace_back(0, 0, 4.0f);
+  triplets.emplace_back(0, 1, -1.0f);
 
-    triplets.emplace_back(1, 0, -1.0f);
-    triplets.emplace_back(1, 1, 5.0f);
-    triplets.emplace_back(1, 3, -2.0f);
+  triplets.emplace_back(1, 0, -1.0f);
+  triplets.emplace_back(1, 1, 5.0f);
+  triplets.emplace_back(1, 3, -2.0f);
 
-    triplets.emplace_back(2, 2, 3.0f);
-    triplets.emplace_back(2, 4, -1.0f);
+  triplets.emplace_back(2, 2, 3.0f);
+  triplets.emplace_back(2, 4, -1.0f);
 
-    triplets.emplace_back(3, 1, -2.0f);
-    triplets.emplace_back(3, 3, 6.0f);
-    triplets.emplace_back(3, 5, -1.0f);
+  triplets.emplace_back(3, 1, -2.0f);
+  triplets.emplace_back(3, 3, 6.0f);
+  triplets.emplace_back(3, 5, -1.0f);
 
-    triplets.emplace_back(4, 2, -1.0f);
-    triplets.emplace_back(4, 4, 4.0f);
-    triplets.emplace_back(4, 6, -1.0f);
+  triplets.emplace_back(4, 2, -1.0f);
+  triplets.emplace_back(4, 4, 4.0f);
+  triplets.emplace_back(4, 6, -1.0f);
 
-    triplets.emplace_back(5, 3, -1.0f);
-    triplets.emplace_back(5, 5, 5.0f);
-    triplets.emplace_back(5, 7, -2.0f);
+  triplets.emplace_back(5, 3, -1.0f);
+  triplets.emplace_back(5, 5, 5.0f);
+  triplets.emplace_back(5, 7, -2.0f);
 
-    triplets.emplace_back(6, 4, -1.0f);
-    triplets.emplace_back(6, 6, 3.0f);
+  triplets.emplace_back(6, 4, -1.0f);
+  triplets.emplace_back(6, 6, 3.0f);
 
-    triplets.emplace_back(7, 5, -2.0f);
-    triplets.emplace_back(7, 7, 4.0f);
+  triplets.emplace_back(7, 5, -2.0f);
+  triplets.emplace_back(7, 7, 4.0f);
 
-    Eigen::SparseMatrix<
-        float,
-        Eigen::RowMajor
-    > A(n, n);
+  Eigen::SparseMatrix<float, Eigen::RowMajor> A(n, n);
 
-    A.setFromTriplets(
-        triplets.begin(),
-        triplets.end()
-    );
+  A.setFromTriplets(triplets.begin(), triplets.end());
 
-    A.makeCompressed();
+  A.makeCompressed();
 
-    // --------------------------------------------------------
-    // Original vector and Eigen reference.
-    // --------------------------------------------------------
+  // --------------------------------------------------------
+  // Original vector and Eigen reference.
+  // --------------------------------------------------------
 
-    Eigen::VectorXf x(n);
+  Eigen::VectorXf x(n);
 
-    x <<
-        1.0f,
-        2.0f,
-        -1.0f,
-        4.0f,
-        0.5f,
-        -2.0f,
-        3.0f,
-        1.5f;
+  x << 1.0f, 2.0f, -1.0f, 4.0f, 0.5f, -2.0f, 3.0f, 1.5f;
 
-    Eigen::VectorXf expectedY =
-        A * x;
+  Eigen::VectorXf expectedY = A * x;
 
-    // --------------------------------------------------------
-    // Construct a deterministic random permutation.
-    // --------------------------------------------------------
+  // --------------------------------------------------------
+  // Construct a deterministic random permutation.
+  // --------------------------------------------------------
 
-    gpuSolver::Permutation* permutation =
-        makeRandomPermutation(
-            static_cast<std::size_t>(n),
-            12345
-        );
+  gpuSolver::Permutation *permutation =
+      makeRandomPermutation(static_cast<std::size_t>(n), 12345);
 
-    // --------------------------------------------------------
-    // HostCSRMatrix builds and activates P A P^T.
-    // --------------------------------------------------------
+  // --------------------------------------------------------
+  // HostCSRMatrix builds and activates P A P^T.
+  // --------------------------------------------------------
 
-    gpuSolver::HostCSRMatrix hostA(
-        static_cast<std::size_t>(A.rows()),
-        static_cast<std::size_t>(A.cols()),
-        static_cast<std::size_t>(A.nonZeros()),
-        A.outerIndexPtr(),
-        A.innerIndexPtr(),
-        A.valuePtr(),
-        *permutation
-    );
+  gpuSolver::HostCSRMatrix hostA(
+      static_cast<std::size_t>(A.rows()), static_cast<std::size_t>(A.cols()),
+      static_cast<std::size_t>(A.nonZeros()), A.outerIndexPtr(),
+      A.innerIndexPtr(), A.valuePtr(), *permutation);
 
-    EXPECT_TRUE(
-        hostA.isPermuted()
-    );
+  EXPECT_TRUE(hostA.isPermuted());
 
-    // --------------------------------------------------------
-    // Build x' = P x.
-    // --------------------------------------------------------
+  // --------------------------------------------------------
+  // Build x' = P x.
+  // --------------------------------------------------------
 
-    float* xPermuted =
-        new float[n];
+  float *xPermuted = new float[n];
 
-    permuteVector(
-        x.data(),
-        xPermuted,
-        static_cast<std::size_t>(n),
-        *permutation
-    );
+  permuteVector(x.data(), xPermuted, static_cast<std::size_t>(n), *permutation);
 
-    // --------------------------------------------------------
-    // GPU.
-    // --------------------------------------------------------
+  // --------------------------------------------------------
+  // GPU.
+  // --------------------------------------------------------
 
-    gpuSolver::MetalContext context;
-    gpuSolver::MetalBackend backend(context);
+  gpuSolver::MetalContext context;
+  gpuSolver::MetalBackend backend(context);
 
-    gpuSolver::DeviceCSRMatrix deviceA(
-        context,
-        hostA
-    );
+  gpuSolver::DeviceCSRMatrix deviceA(context, hostA);
 
-    std::vector<float> xPermutedVector(
-        xPermuted,
-        xPermuted + n
-    );
+  std::vector<float> xPermutedVector(xPermuted, xPermuted + n);
 
-    gpuSolver::DeviceVector deviceX(
-        context,
-        xPermutedVector
-    );
+  gpuSolver::DeviceVector *deviceX =
+      backend.createVector(xPermutedVector.size(), xPermutedVector.data());
 
-    gpuSolver::DeviceVector deviceY(
-        context,
-        static_cast<std::size_t>(n)
-    );
+  gpuSolver::DeviceVector* deviceY = backend.createVector(n);
 
-    backend.spmv(
-        deviceA,
-        deviceX,
-        deviceY
-    );
 
-    // --------------------------------------------------------
-    // GPU gives y' = P y.
-    //
-    // Convert it back to the original ordering.
-    // --------------------------------------------------------
+  backend.spmv(deviceA, *deviceX, *deviceY);
 
-    float* yPermuted =
-        deviceY.download();
+  // --------------------------------------------------------
+  // GPU gives y' = P y.
+  //
+  // Convert it back to the original ordering.
+  // --------------------------------------------------------
 
-    float* yOriginal =
-        new float[n];
+  float *yPermuted = deviceY->download();
 
-    inversePermuteVector(
-        yPermuted,
-        yOriginal,
-        static_cast<std::size_t>(n),
-        *permutation
-    );
+  float *yOriginal = new float[n];
 
-    // --------------------------------------------------------
-    // Compare against ordinary Eigen A*x.
-    // --------------------------------------------------------
+  inversePermuteVector(yPermuted, yOriginal, static_cast<std::size_t>(n),
+                       *permutation);
 
-    for (int i = 0; i < n; ++i)
-    {
-        EXPECT_NEAR(
-            yOriginal[i],
-            expectedY[i],
-            1e-5f
-        );
-    }
+  // --------------------------------------------------------
+  // Compare against ordinary Eigen A*x.
+  // --------------------------------------------------------
 
-    delete[] xPermuted;
-    delete[] yOriginal;
-    delete permutation;
+  for (int i = 0; i < n; ++i) {
+    EXPECT_NEAR(yOriginal[i], expectedY[i], 1e-5f);
+  }
+
+  delete[] xPermuted;
+  delete[] yOriginal;
+  delete permutation;
+  delete deviceX;
+  delete deviceY;
 }

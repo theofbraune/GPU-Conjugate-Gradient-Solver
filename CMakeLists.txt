@@ -80,7 +80,7 @@ if(APPLE)
             src/metal/MetalImplementation.cc
             src/metal/MetalBackend.cc
             src/metal/MetalEncoder.cc
-            src/DeviceVector.cc
+            src/metal/MetalDeviceVector.cc
             src/DeviceIndexVector.cc
             src/DeviceSparseMatrix.cc
             src/DeviceScalar.cc

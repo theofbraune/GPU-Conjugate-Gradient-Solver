@@ -28,19 +28,22 @@ int main()
 
     std::size_t sizeXresult = 4;
 
-    gpuSolver::DeviceVector x(context, xHost);
-    gpuSolver::DeviceVector y(context, yHost);
+    // gpuSolver::DeviceVector x(context, xHost);
+    // gpuSolver::DeviceVector y(context, yHost);
+    gpuSolver::DeviceVector* xPtr = backend.createVector(sizeXresult,xHost.data());
+    gpuSolver::DeviceVector* yPtr = backend.createVector(sizeXresult,yHost.data());
 
-    backend.scale(x, 2.0f);
+
+    backend.scale(*xPtr, 2.0f);
 
     backend.axpy(
         3.0f,
-        x,
-        y
+        *xPtr,
+        *yPtr
     );
 
-    float* xResult = x.download();
-    float* yResult = y.download();
+    float* xResult = xPtr->download();
+    float* yResult = yPtr->download();
 
     std::cout << "x after scale:\n";
 
@@ -59,6 +62,9 @@ int main()
     }
 
     std::cout << "\n";
+
+    delete xPtr;
+    delete yPtr;
 
     return 0;
 }

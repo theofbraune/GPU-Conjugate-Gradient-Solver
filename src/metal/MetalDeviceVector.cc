@@ -1,4 +1,4 @@
-#include <GPUSolver/DeviceVector.h>
+#include <GPUSolver/metal/MetalDeviceVector.h>
 #include <GPUSolver/metal/MetalContext.h>
 
 #include <Foundation/Foundation.hpp>
@@ -12,12 +12,12 @@
 
 namespace gpuSolver {
 
-struct DeviceVector::Impl {
+struct MetalDeviceVector::Impl {
   MTL::Buffer *buffer = nullptr;
   size_t size = 0;
 };
 
-DeviceVector::DeviceVector(MetalContext &context,
+MetalDeviceVector::MetalDeviceVector(MetalContext &context,
                            const std::vector<float> &values)
     : impl_(new Impl) {
   size_t sizeVector = values.size();
@@ -28,7 +28,7 @@ DeviceVector::DeviceVector(MetalContext &context,
                                   MTL::ResourceStorageModeShared);
 }
 
-DeviceVector::DeviceVector(MetalContext &context, std::size_t size,
+MetalDeviceVector::MetalDeviceVector(MetalContext &context, std::size_t size,
                            const float *values)
     : impl_(new Impl) {
   impl_->size = size;
@@ -36,7 +36,8 @@ DeviceVector::DeviceVector(MetalContext &context, std::size_t size,
       context.device()->newBuffer(values, size * sizeof(float),
                                   MTL::ResourceStorageModeShared);
 }
-DeviceVector::DeviceVector(MetalContext &context, size_t size)
+
+MetalDeviceVector::MetalDeviceVector(MetalContext &context, size_t size)
     : impl_(new Impl) {
   impl_->size = size;
 
@@ -44,14 +45,14 @@ DeviceVector::DeviceVector(MetalContext &context, size_t size)
                                               MTL::ResourceStorageModeShared);
 }
 
-DeviceVector::~DeviceVector() {
+MetalDeviceVector::~MetalDeviceVector() {
 
   impl_->buffer->release();
 
   delete impl_;
 }
 
-void DeviceVector::updateValues(const float *values,
+void MetalDeviceVector::updateValues(const float *values,
                                 const size_t sizeOfValues) {
 
   // impl_->size = sizeOfValues;
@@ -67,7 +68,7 @@ void DeviceVector::updateValues(const float *values,
   std::memcpy(destination, values, sizeOfValues * sizeof(float));
 }
 
-float *DeviceVector::download() const {
+float *MetalDeviceVector::download() const {
   // check if the buffer is loaded
   if (impl_->buffer == nullptr) {
     throw std::runtime_error("The data in the buffer is not allocated! ");
@@ -78,14 +79,14 @@ float *DeviceVector::download() const {
   return resultValsRaw;
 }
 
-MTL::Buffer *DeviceVector::getNativeBuffer() {
+MTL::Buffer *MetalDeviceVector::getNativeBuffer() {
   // check if the buffer is loaded
   if (impl_->buffer == nullptr) {
     throw std::runtime_error("The data in the buffer is not allocated! ");
   }
   return impl_->buffer;
 }
-MTL::Buffer *DeviceVector::getNativeBuffer() const {
+MTL::Buffer *MetalDeviceVector::getNativeBuffer() const {
   // check if the buffer is loaded
   if (impl_->buffer == nullptr) {
     throw std::runtime_error("The data in the buffer is not allocated! ");
@@ -93,8 +94,6 @@ MTL::Buffer *DeviceVector::getNativeBuffer() const {
   return impl_->buffer;
 }
 
-size_t DeviceVector::size() { return impl_->size; }
-
-size_t DeviceVector::size() const { return impl_->size; }
+size_t MetalDeviceVector::size() const { return impl_->size; }
 
 } // namespace gpuSolver

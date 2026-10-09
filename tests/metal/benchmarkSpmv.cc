@@ -316,17 +316,15 @@ int main(int argc, char* argv[])
         context,
         ell);
 
-    gpuSolver::DeviceVector deviceX(
-        context,
-        xPermuted);
+    gpuSolver::DeviceVector* deviceX = backend.createVector(xPermuted.size(), xPermuted.data());
 
-    gpuSolver::DeviceVector deviceYCSR(
-        context,
-        nRows);
 
-    gpuSolver::DeviceVector deviceYELL(
-        context,
-        nRows);
+    gpuSolver::DeviceVector* deviceYCSR = backend.createVector(nRows);
+      // (
+      //   context,
+      //   nRows);
+
+    gpuSolver::DeviceVector* deviceYELL = backend.createVector(nRows);
 
     coolDown(cooldownDuration);
 
@@ -336,8 +334,8 @@ int main(int argc, char* argv[])
     {
         backend.spmv(
             deviceCSR,
-            deviceX,
-            deviceYCSR);
+            *deviceX,
+            *deviceYCSR);
     }
 
     Clock::time_point csrStart = Clock::now();
@@ -348,8 +346,8 @@ int main(int argc, char* argv[])
     {
         backend.spmv(
             deviceCSR,
-            deviceX,
-            deviceYCSR);
+            *deviceX,
+            *deviceYCSR);
     }
 
     Clock::time_point csrEnd = Clock::now();
@@ -361,16 +359,16 @@ int main(int argc, char* argv[])
 
     backend.spmvRepeated(
         deviceCSR,
-        deviceX,
-        deviceYCSR,
+        *deviceX,
+        *deviceYCSR,
         warmupIterations);
 
     Clock::time_point csrBatchStart = Clock::now();
 
     backend.spmvRepeated(
         deviceCSR,
-        deviceX,
-        deviceYCSR,
+        *deviceX,
+        *deviceYCSR,
         repetitions);
 
     Clock::time_point csrBatchEnd = Clock::now();
@@ -388,8 +386,8 @@ int main(int argc, char* argv[])
     {
         backend.spmv(
             deviceELL,
-            deviceX,
-            deviceYELL);
+            *deviceX,
+            *deviceYELL);
     }
 
     Clock::time_point ellStart = Clock::now();
@@ -400,8 +398,8 @@ int main(int argc, char* argv[])
     {
         backend.spmv(
             deviceELL,
-            deviceX,
-            deviceYELL);
+            *deviceX,
+            *deviceYELL);
     }
 
     Clock::time_point ellEnd = Clock::now();
@@ -413,16 +411,16 @@ int main(int argc, char* argv[])
 
     backend.spmvRepeated(
         deviceELL,
-        deviceX,
-        deviceYELL,
+        *deviceX,
+        *deviceYELL,
         warmupIterations);
 
     Clock::time_point ellBatchStart = Clock::now();
 
     backend.spmvRepeated(
         deviceELL,
-        deviceX,
-        deviceYELL,
+        *deviceX,
+        *deviceYELL,
         repetitions);
 
     Clock::time_point ellBatchEnd = Clock::now();
@@ -432,8 +430,8 @@ int main(int argc, char* argv[])
             ellBatchStart,
             ellBatchEnd);
 
-    float* csrY = deviceYCSR.download();
-    float* ellY = deviceYELL.download();
+    float* csrY = deviceYCSR->download();
+    float* ellY = deviceYELL->download();
 
     float maxCpuError = 0.0f;
     float maxCSRError = 0.0f;
@@ -535,5 +533,8 @@ int main(int argc, char* argv[])
               << csrBatchMilliseconds / ellBatchMilliseconds
               << "x\n";
 
+    delete deviceX;
+    delete deviceYCSR;
+    delete deviceYELL;
     return 0;
 }

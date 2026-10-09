@@ -7,10 +7,10 @@
 #include <cstdlib>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <vector>
-#include <algorithm>
 // #error TESTING_CORRECT_FILE
 namespace {
 
@@ -41,20 +41,22 @@ void testDotForSize(std::size_t n) {
 
   const float expected = cpuDot(x, y);
 
-  gpuSolver::DeviceVector deviceX(context, x);
+  gpuSolver::DeviceVector *deviceX = backend.createVector(x.size(), x.data());
 
-  gpuSolver::DeviceVector deviceY(context, y);
+  gpuSolver::DeviceVector *deviceY = backend.createVector(y.size(), y.data());
 
   gpuSolver::DeviceScalar result(context);
 
-  backend.dot(deviceX, deviceY, result);
+  backend.dot(*deviceX, *deviceY, result);
 
   const float gpuResult = result.download();
   // const float tolerance = 1e-4 * std::max(1.0, std::abs(expected));
-  const float tolerance = 1e-4*(std::max(1.0f, std::abs(expected)));
+  const float tolerance = 1e-4 * (std::max(1.0f, std::abs(expected)));
 
   EXPECT_NEAR(static_cast<double>(gpuResult), expected, tolerance);
 
+  delete deviceX;
+  delete deviceY;
 }
 
 } // namespace
@@ -83,15 +85,19 @@ TEST(MetalDot, Ones) {
 
   std::vector<float> y(n, 1.0f);
 
-  gpuSolver::DeviceVector deviceX(context, x);
+  gpuSolver::DeviceVector *deviceX = backend.createVector(x.size(), x.data());
 
-  gpuSolver::DeviceVector deviceY(context, y);
+  gpuSolver::DeviceVector *deviceY = backend.createVector(y.size(), y.data());
 
   gpuSolver::DeviceScalar result(context);
 
-  backend.dot(deviceX, deviceY, result);
+  backend.dot(*deviceX, *deviceY, result);
 
   EXPECT_FLOAT_EQ(result.download(), static_cast<float>(n));
+
+  delete deviceX;
+  delete deviceY;
+
 }
 
 TEST(MetalDot, ZeroResult) {
@@ -102,15 +108,18 @@ TEST(MetalDot, ZeroResult) {
 
   std::vector<float> y = {1.0f, -1.0f, 1.0f, -1.0f};
 
-  gpuSolver::DeviceVector deviceX(context, x);
+  gpuSolver::DeviceVector* deviceX = backend.createVector(x.size(),x.data());
 
-  gpuSolver::DeviceVector deviceY(context, y);
+  gpuSolver::DeviceVector* deviceY = backend.createVector(y.size(), y.data());
 
   gpuSolver::DeviceScalar result(context);
 
-  backend.dot(deviceX, deviceY, result);
+  backend.dot(*deviceX, *deviceY, result);
 
   EXPECT_NEAR(result.download(), 0.0f, 1e-6f);
+
+  delete deviceX;
+  delete deviceY;
 }
 
 TEST(MetalDot, DifferentVectorSizesThrow) {
@@ -121,11 +130,14 @@ TEST(MetalDot, DifferentVectorSizesThrow) {
 
   std::vector<float> y(11, 1.0f);
 
-  gpuSolver::DeviceVector deviceX(context, x);
+  gpuSolver::DeviceVector* deviceX = backend.createVector(x.size(), x.data());
 
-  gpuSolver::DeviceVector deviceY(context, y);
+  gpuSolver::DeviceVector* deviceY = backend.createVector(y.size(), y.data());
 
   gpuSolver::DeviceScalar result(context);
 
-  EXPECT_THROW(backend.dot(deviceX, deviceY, result), std::runtime_error);
+  EXPECT_THROW(backend.dot(*deviceX, *deviceY, result), std::runtime_error);
+
+  delete deviceX;
+  delete deviceY;
 }

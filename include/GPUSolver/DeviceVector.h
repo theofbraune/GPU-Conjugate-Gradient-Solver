@@ -1,55 +1,23 @@
 #pragma once
-
 #include <cstddef>
-#include <vector>
-
-using std::size_t;
-
-
-namespace MTL
-{
-    class Buffer;
-}
 
 namespace gpuSolver {
-  
-  class MetalContext;
-  class MetalBackend;
 
-  class DeviceVector{
+class DeviceVector {
+public:
+  virtual ~DeviceVector() = default;
 
-    private:
+  virtual std::size_t size() const = 0;
+  virtual void updateValues(const float* values, std::size_t sizeOfValues) = 0;
+  virtual float* download() const = 0;
 
-      struct Impl;
-      Impl* impl_;
+protected:
+  DeviceVector() = default;
 
-      MTL::Buffer* getNativeBuffer();
+public:
+  DeviceVector(const DeviceVector&) = delete;
+  DeviceVector& operator=(const DeviceVector&) = delete;
+};
 
-      MTL::Buffer* getNativeBuffer() const;
+} // namespace gpuSolver
 
-      friend class MetalBackend;
-
-    public:
-      ~DeviceVector();
-  
-      DeviceVector(MetalContext& context, std::size_t size);
-      DeviceVector(MetalContext& context, const std::vector<float>&values);
-      DeviceVector(MetalContext& context, std::size_t size, const float* values);
-
-      DeviceVector(const DeviceVector&) = delete;
-      DeviceVector& operator=(const DeviceVector&) = delete;
-
-      size_t size() const;
-
-      size_t size();
-
-      void updateValues(const float* values, const size_t sizeOfValues);
-
-      float* download() const;
-
-
-
-
-
-  };
-}

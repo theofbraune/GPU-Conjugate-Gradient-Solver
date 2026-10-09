@@ -8,6 +8,7 @@
 #include <GPUSolver/DeviceScalar.h>
 #include <GPUSolver/DeviceSparseMatrix.h>
 #include <GPUSolver/DeviceVector.h>
+#include <GPUSolver/metal/MetalDeviceVector.h>
 
 #include <GPUSolver/metal/MetalContext.h>
 
@@ -48,60 +49,60 @@ private:
   // --------------------------------------------------------
 
   void encodeSpmvMetal(MTL::ComputeCommandEncoder *encoder,
-                       const DeviceCSRMatrix &A, const DeviceVector &x,
-                       DeviceVector &Ax);
+                       const DeviceCSRMatrix &A, const MetalDeviceVector&x,
+                       MetalDeviceVector &Ax);
 
   void encodeSpmvELLMetal(MTL::ComputeCommandEncoder *encoder,
-                          const DeviceELLMatrix &A, const DeviceVector &x,
-                          DeviceVector &Ax);
+                          const DeviceELLMatrix &A, const MetalDeviceVector &x,
+                          MetalDeviceVector &Ax);
 
   void encodeDotMetal(MTL::ComputeCommandEncoder *encoder,
-                      const DeviceVector &x, const DeviceVector &y,
+                      const MetalDeviceVector &x, const MetalDeviceVector &y,
                       DeviceScalar &result);
 
   void encodeScaleVectorMetal(MTL::ComputeCommandEncoder *encoder,
-                              const DeviceVector &scaleVector,
-                              DeviceVector &output);
+                              const MetalDeviceVector &scaleVector,
+                              MetalDeviceVector &output);
 
   void encodeGaussSeidelColorMetal(MTL::ComputeCommandEncoder *encoder,
                                    const DeviceCSRMatrix &matrix,
                                    const DeviceIndexVector &colorVertices,
                                    std::size_t colorStart,
                                    std::size_t colorCount,
-                                   const DeviceVector &rhs,
-                                   DeviceVector &solution, float omega);
+                                   const MetalDeviceVector &rhs,
+                                   MetalDeviceVector &solution, float omega);
 
   void encodeApplyBlockInverses3x3Metal(MTL::ComputeCommandEncoder *encoder,
-                                        const DeviceVector &inverseDiagBlocks,
-                                        const DeviceVector &residual,
-                                        DeviceVector &correction);
+                                        const MetalDeviceVector &inverseDiagBlocks,
+                                        const MetalDeviceVector &residual,
+                                        MetalDeviceVector &correction);
 
 
   void encodeBlockGaussSeidelColor3x3Metal(
       MTL::ComputeCommandEncoder* encoder, const DeviceCSRMatrix &matrix,
       const DeviceIndexVector &colorBlocks,
-      const DeviceVector &diagonalInverses, std::size_t begin, std::size_t end,
-      const DeviceVector &rhs, DeviceVector &solution, float omega);
+      const MetalDeviceVector &diagonalInverses, std::size_t begin, std::size_t end,
+      const MetalDeviceVector &rhs, MetalDeviceVector &solution, float omega);
 
   // void encodeSetZero(BackendEncoder& encoder, DeviceVector& input) override;
   void encodeSetZeroMetal(MTL::ComputeCommandEncoder *encoder,
-                          DeviceVector &input);
+                          MetalDeviceVector &input);
 
-  void encodeScaleMetal(MTL::ComputeCommandEncoder *encoder, DeviceVector &x,
+  void encodeScaleMetal(MTL::ComputeCommandEncoder *encoder, MetalDeviceVector &x,
                         float scalar);
 
-  void encodeScaleMetal(MTL::ComputeCommandEncoder *encoder, DeviceVector &x,
+  void encodeScaleMetal(MTL::ComputeCommandEncoder *encoder, MetalDeviceVector &x,
                         const DeviceScalar &scalar);
 
   void encodeCopyMetal(MTL::ComputeCommandEncoder *encoder,
-                       const DeviceVector &x, DeviceVector &xCopy);
+                       const MetalDeviceVector &x, MetalDeviceVector &xCopy);
 
   void encodeAxpyMetal(MTL::ComputeCommandEncoder *encoder, float alpha,
-                       const DeviceVector &x, DeviceVector &y);
+                       const MetalDeviceVector &x, MetalDeviceVector &y);
 
   void encodeAxpyMetal(MTL::ComputeCommandEncoder *encoder,
-                       const DeviceScalar &alpha, const DeviceVector &x,
-                       DeviceVector &y);
+                       const DeviceScalar &alpha, const MetalDeviceVector &x,
+                       MetalDeviceVector &y);
 
   void encodeScalarSetMetal(MTL::ComputeCommandEncoder *encoder, float value,
                             DeviceScalar &output);
