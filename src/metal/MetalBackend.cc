@@ -1,8 +1,12 @@
 #include "GPUSolver/Backend.h"
 #include "GPUSolver/BackendEncoder.h"
-#include "GPUSolver/DeviceIndexVector.h"
+#include "GPUSolver/DeviceELLMatrix.h"
 #include "GPUSolver/DeviceScalar.h"
 #include "GPUSolver/DeviceVector.h"
+#include "GPUSolver/metal/MetalDeviceELLMatrix.h"
+#include "GPUSolver/metal/MetalDeviceIndexVector.h"
+#include "GPUSolver/metal/MetalDeviceScalar.h"
+#include "GPUSolver/metal/MetalDeviceSparseMatrix.h"
 #include <Foundation/NSError.hpp>
 #include <Foundation/NSString.hpp>
 #include <GPUSolver/DeviceSparseMatrix.h>
@@ -330,7 +334,7 @@ void MetalBackend::encodeSetZeroMetal(MTL::ComputeCommandEncoder *encoder,
 
 void MetalBackend::encodeScaleMetal(MTL::ComputeCommandEncoder *encoder,
                                     MetalDeviceVector &x,
-                                    const DeviceScalar &alpha) {
+                                    const MetalDeviceScalar &alpha) {
 
   encoder->setComputePipelineState(impl_->scalePipelineDevice);
 
@@ -373,7 +377,7 @@ void MetalBackend::encodeCopyMetal(MTL::ComputeCommandEncoder *encoder,
 }
 
 void MetalBackend::encodeAxpyMetal(MTL::ComputeCommandEncoder *encoder,
-                                   const DeviceScalar &alpha,
+                                   const MetalDeviceScalar &alpha,
                                    const MetalDeviceVector &x,
                                    MetalDeviceVector &y) {
 
@@ -433,7 +437,7 @@ void MetalBackend::encodeAxpyMetal(MTL::ComputeCommandEncoder *encoder,
 }
 
 void MetalBackend::encodeSpmvMetal(MTL::ComputeCommandEncoder *encoder,
-                                   const DeviceCSRMatrix &A,
+                                   const MetalDeviceCSRMatrix &A,
                                    const MetalDeviceVector &x,
                                    MetalDeviceVector &Ax) {
   encoder->setComputePipelineState(impl_->spmvPipeline);
@@ -452,8 +456,8 @@ void MetalBackend::encodeSpmvMetal(MTL::ComputeCommandEncoder *encoder,
 }
 
 void MetalBackend::encodeGaussSeidelColorMetal(
-    MTL::ComputeCommandEncoder *encoder, const DeviceCSRMatrix &matrix,
-    const DeviceIndexVector &colorVertices, std::size_t colorStart,
+    MTL::ComputeCommandEncoder *encoder, const MetalDeviceCSRMatrix &matrix,
+    const MetalDeviceIndexVector &colorVertices, std::size_t colorStart,
     std::size_t colorCount, const MetalDeviceVector &rhs,
     MetalDeviceVector &solution, float omega) {
   encoder->setComputePipelineState(impl_->gaussSeidelColorPipeline);
@@ -504,7 +508,7 @@ void MetalBackend::encodeApplyBlockInverses3x3Metal(
 }
 
 void MetalBackend::encodeSpmvELLMetal(MTL::ComputeCommandEncoder *encoder,
-                                      const DeviceELLMatrix &A,
+                                      const MetalDeviceELLMatrix &A,
                                       const MetalDeviceVector &x,
                                       MetalDeviceVector &y) {
   encoder->setComputePipelineState(impl_->spmvELLPipeline);
@@ -537,7 +541,7 @@ void MetalBackend::encodeSpmvELLMetal(MTL::ComputeCommandEncoder *encoder,
 void MetalBackend::encodeDotMetal(MTL::ComputeCommandEncoder *encoder,
                                   const MetalDeviceVector &x,
                                   const MetalDeviceVector &y,
-                                  DeviceScalar &result) {
+                                  MetalDeviceScalar &result) {
 
   if (x.size() != y.size()) {
     throw std::runtime_error(
@@ -636,9 +640,9 @@ void MetalBackend::encodeDotMetal(MTL::ComputeCommandEncoder *encoder,
 }
 
 void MetalBackend::encodeScalarDivideMetal(MTL::ComputeCommandEncoder *encoder,
-                                           const DeviceScalar &numerator,
-                                           const DeviceScalar &denominator,
-                                           DeviceScalar &result) {
+                                           const MetalDeviceScalar &numerator,
+                                           const MetalDeviceScalar &denominator,
+                                           MetalDeviceScalar &result) {
   encoder->setComputePipelineState(impl_->scalarDividePipeline);
 
   encoder->setBuffer(numerator.getNativeBuffer(), 0, 0);
@@ -651,8 +655,8 @@ void MetalBackend::encodeScalarDivideMetal(MTL::ComputeCommandEncoder *encoder,
 }
 
 void MetalBackend::encodeScalarMultiplyMetal(
-    MTL::ComputeCommandEncoder *encoder, const DeviceScalar &factor1,
-    const DeviceScalar &factor2, DeviceScalar &result) {
+    MTL::ComputeCommandEncoder *encoder, const MetalDeviceScalar &factor1,
+    const MetalDeviceScalar &factor2, MetalDeviceScalar &result) {
   encoder->setComputePipelineState(impl_->scalarMultiplyPipeline);
 
   encoder->setBuffer(factor1.getNativeBuffer(), 0, 0);
@@ -665,8 +669,8 @@ void MetalBackend::encodeScalarMultiplyMetal(
 }
 
 void MetalBackend::encodeScalarNegateMetal(MTL::ComputeCommandEncoder *encoder,
-                                           const DeviceScalar &input,
-                                           DeviceScalar &result) {
+                                           const MetalDeviceScalar &input,
+                                           MetalDeviceScalar &result) {
   encoder->setComputePipelineState(impl_->scalarNegatePipeline);
 
   encoder->setBuffer(input.getNativeBuffer(), 0, 0);
@@ -677,8 +681,8 @@ void MetalBackend::encodeScalarNegateMetal(MTL::ComputeCommandEncoder *encoder,
 }
 
 void MetalBackend::encodeScalarSqrtMetal(MTL::ComputeCommandEncoder *encoder,
-                                         const DeviceScalar &input,
-                                         DeviceScalar &result) {
+                                         const MetalDeviceScalar &input,
+                                         MetalDeviceScalar &result) {
   encoder->setComputePipelineState(impl_->scalarSqrtPipeline);
 
   encoder->setBuffer(input.getNativeBuffer(), 0, 0);
@@ -689,7 +693,8 @@ void MetalBackend::encodeScalarSqrtMetal(MTL::ComputeCommandEncoder *encoder,
 }
 
 void MetalBackend::encodeScalarSetMetal(MTL::ComputeCommandEncoder *encoder,
-                                        float input, DeviceScalar &result) {
+                                        float input,
+                                        MetalDeviceScalar &result) {
   encoder->setComputePipelineState(impl_->scalarSetPipeline);
 
   encoder->setBytes(&input, sizeof(float), 0);
@@ -700,8 +705,8 @@ void MetalBackend::encodeScalarSetMetal(MTL::ComputeCommandEncoder *encoder,
 }
 
 void MetalBackend::encodeScalarCopyMetal(MTL::ComputeCommandEncoder *encoder,
-                                         const DeviceScalar &input,
-                                         DeviceScalar &result) {
+                                         const MetalDeviceScalar &input,
+                                         MetalDeviceScalar &result) {
   encoder->setComputePipelineState(impl_->scalarCopyPipeline);
 
   encoder->setBuffer(input.getNativeBuffer(), 0, 0);
@@ -712,8 +717,8 @@ void MetalBackend::encodeScalarCopyMetal(MTL::ComputeCommandEncoder *encoder,
 }
 
 void MetalBackend::encodeBlockGaussSeidelColor3x3Metal(
-    MTL::ComputeCommandEncoder *encoder, const DeviceCSRMatrix &matrix,
-    const DeviceIndexVector &colorBlocks,
+    MTL::ComputeCommandEncoder *encoder, const MetalDeviceCSRMatrix &matrix,
+    const MetalDeviceIndexVector &colorBlocks,
     const MetalDeviceVector &inverseDiagonalBlocks, std::size_t colorStart,
     std::size_t colorCount, const MetalDeviceVector &rhs,
     MetalDeviceVector &solution, float omega) {
@@ -753,6 +758,7 @@ void MetalBackend::encodeBlockGaussSeidelColor3x3Metal(
 
   dispatch1D(encoder, impl_->blockGaussSeidelColor3x3Pipeline, colorCount);
 }
+
 void MetalBackend::encodeApplyBlockInverses3x3(
     BackendEncoder &encoder, const DeviceVector &inverseDiagBlocks,
     const DeviceVector &residual, DeviceVector &correction) {
@@ -781,6 +787,8 @@ void MetalBackend::encodeBlockGaussSeidelColor3x3(
     float omega) {
   MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
 
+  const MetalDeviceCSRMatrix &matrixMet =
+      dynamic_cast<const MetalDeviceCSRMatrix &>(matrix);
   const MetalDeviceVector &metalInverseDiagBlocks =
       static_cast<const MetalDeviceVector &>(inverseDiagonalBlocks);
 
@@ -788,9 +796,13 @@ void MetalBackend::encodeBlockGaussSeidelColor3x3(
       static_cast<const MetalDeviceVector &>(rhs);
   MetalDeviceVector &metalSolution = static_cast<MetalDeviceVector &>(solution);
 
-  encodeBlockGaussSeidelColor3x3Metal(
-      metalEncoder.encoder_, matrix, colorBlocks, metalInverseDiagBlocks,
-      colorStart, colorCount, metalRHS, metalSolution, omega);
+  const MetalDeviceIndexVector &metalColorBlocks =
+      dynamic_cast<const MetalDeviceIndexVector &>(colorBlocks);
+
+  encodeBlockGaussSeidelColor3x3Metal(metalEncoder.encoder_, matrixMet,
+                                      metalColorBlocks, metalInverseDiagBlocks,
+                                      colorStart, colorCount, metalRHS,
+                                      metalSolution, omega);
 }
 
 void MetalBackend::submit(BackendEncoder &encoder) {
@@ -828,8 +840,10 @@ void MetalBackend::encodeScale(BackendEncoder &encoder, DeviceVector &x,
 
   MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
   MetalDeviceVector &metalVec = static_cast<MetalDeviceVector &>(x);
+  const MetalDeviceScalar &metalScalar =
+      static_cast<const MetalDeviceScalar &>(scalar);
 
-  encodeScaleMetal(metalEncoder.encoder_, metalVec, scalar);
+  encodeScaleMetal(metalEncoder.encoder_, metalVec, metalScalar);
 }
 
 void MetalBackend::encodeScaleVector(BackendEncoder &encoder,
@@ -837,9 +851,10 @@ void MetalBackend::encodeScaleVector(BackendEncoder &encoder,
                                      DeviceVector &output) {
   MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
   MetalDeviceVector &metalOut = static_cast<MetalDeviceVector &>(output);
-  const MetalDeviceVector &metalScale = static_cast<const MetalDeviceVector &>(scaleVector);
+  const MetalDeviceVector &metalScale =
+      static_cast<const MetalDeviceVector &>(scaleVector);
 
-  this->encodeScaleVectorMetal(metalEncoder.encoder_,metalScale,metalOut);
+  this->encodeScaleVectorMetal(metalEncoder.encoder_, metalScale, metalOut);
 }
 
 void MetalBackend::encodeCopy(BackendEncoder &encoder, const DeviceVector &x,
@@ -870,18 +885,22 @@ void MetalBackend::encodeAxpy(BackendEncoder &encoder,
 
   const MetalDeviceVector &metalX = static_cast<const MetalDeviceVector &>(x);
   MetalDeviceVector &metalY = static_cast<MetalDeviceVector &>(y);
+  const MetalDeviceScalar &metalAlpha =
+      static_cast<const MetalDeviceScalar &>(alpha);
 
-  encodeAxpyMetal(metalEncoder.encoder_, alpha, metalX, metalY);
+  encodeAxpyMetal(metalEncoder.encoder_, metalAlpha, metalX, metalY);
 }
 
 void MetalBackend::encodeSpmv(BackendEncoder &encoder, const DeviceCSRMatrix &A,
                               const DeviceVector &x, DeviceVector &Ax) {
 
   MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
+  const MetalDeviceCSRMatrix &metalMat =
+      static_cast<const MetalDeviceCSRMatrix &>(A);
   const MetalDeviceVector &metalX = static_cast<const MetalDeviceVector &>(x);
   MetalDeviceVector &metalAx = static_cast<MetalDeviceVector &>(Ax);
 
-  encodeSpmvMetal(metalEncoder.encoder_, A, metalX, metalAx);
+  encodeSpmvMetal(metalEncoder.encoder_, metalMat, metalX, metalAx);
 }
 
 void MetalBackend::encodeDot(BackendEncoder &encoder, const DeviceVector &x,
@@ -891,8 +910,9 @@ void MetalBackend::encodeDot(BackendEncoder &encoder, const DeviceVector &x,
 
   const MetalDeviceVector &metalX = static_cast<const MetalDeviceVector &>(x);
   const MetalDeviceVector &metalY = static_cast<const MetalDeviceVector &>(y);
+  MetalDeviceScalar &metalResult = static_cast<MetalDeviceScalar &>(result);
 
-  encodeDotMetal(metalEncoder.encoder_, metalX, metalY, result);
+  encodeDotMetal(metalEncoder.encoder_, metalX, metalY, metalResult);
 }
 
 void MetalBackend::encodeScalarSet(BackendEncoder &encoder, float value,
@@ -900,7 +920,9 @@ void MetalBackend::encodeScalarSet(BackendEncoder &encoder, float value,
 
   MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
 
-  encodeScalarSetMetal(metalEncoder.encoder_, value, output);
+  MetalDeviceScalar &metalOut = static_cast<MetalDeviceScalar &>(output);
+
+  encodeScalarSetMetal(metalEncoder.encoder_, value, metalOut);
 }
 
 void MetalBackend::encodeScalarCopy(BackendEncoder &encoder,
@@ -909,7 +931,11 @@ void MetalBackend::encodeScalarCopy(BackendEncoder &encoder,
 
   MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
 
-  encodeScalarCopyMetal(metalEncoder.encoder_, input, output);
+  MetalDeviceScalar &metalOut = static_cast<MetalDeviceScalar &>(output);
+  const MetalDeviceScalar &metalIn =
+      static_cast<const MetalDeviceScalar &>(input);
+
+  encodeScalarCopyMetal(metalEncoder.encoder_, metalIn, metalOut);
 }
 
 void MetalBackend::encodeScalarDivide(BackendEncoder &encoder,
@@ -919,8 +945,14 @@ void MetalBackend::encodeScalarDivide(BackendEncoder &encoder,
 
   MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
 
-  encodeScalarDivideMetal(metalEncoder.encoder_, numerator, denominator,
-                          result);
+  const MetalDeviceScalar &metalNum =
+      static_cast<const MetalDeviceScalar &>(numerator);
+  const MetalDeviceScalar &metalDenom =
+      static_cast<const MetalDeviceScalar &>(denominator);
+  MetalDeviceScalar &metalResult = static_cast<MetalDeviceScalar &>(result);
+
+  encodeScalarDivideMetal(metalEncoder.encoder_, metalNum, metalDenom,
+                          metalResult);
 }
 
 void MetalBackend::encodeScalarMultiply(BackendEncoder &encoder,
@@ -930,7 +962,12 @@ void MetalBackend::encodeScalarMultiply(BackendEncoder &encoder,
 
   MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
 
-  encodeScalarMultiplyMetal(metalEncoder.encoder_, factor1, factor2, result);
+  const MetalDeviceScalar &metalfactor1 =
+      static_cast<const MetalDeviceScalar &>(factor1);
+  const MetalDeviceScalar &metalfactor2 =
+      static_cast<const MetalDeviceScalar &>(factor2);
+  MetalDeviceScalar &metalResult = static_cast<MetalDeviceScalar &>(result);
+  encodeScalarMultiplyMetal(metalEncoder.encoder_,metalfactor1, metalfactor2,metalResult);
 }
 
 void MetalBackend::encodeScalarNegate(BackendEncoder &encoder,
@@ -939,7 +976,10 @@ void MetalBackend::encodeScalarNegate(BackendEncoder &encoder,
 
   MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
 
-  encodeScalarNegateMetal(metalEncoder.encoder_, input, output);
+  const MetalDeviceScalar &metalIn = static_cast<const MetalDeviceScalar &>(input);
+  MetalDeviceScalar &metalResult = static_cast<MetalDeviceScalar &>(output);
+
+  encodeScalarNegateMetal(metalEncoder.encoder_,metalIn,metalResult);
 }
 
 void MetalBackend::encodeSetZero(BackendEncoder &encoder, DeviceVector &input) {
@@ -956,7 +996,12 @@ void MetalBackend::encodeScalarSqrt(BackendEncoder &encoder,
 
   MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
 
-  encodeScalarSqrtMetal(metalEncoder.encoder_, input, output);
+  const MetalDeviceScalar &metalIn =
+      static_cast<const MetalDeviceScalar &>(input);
+
+  MetalDeviceScalar &metalResult = static_cast<MetalDeviceScalar &>(output);
+  
+  encodeScalarSqrtMetal(metalEncoder.encoder_, metalIn,metalResult);
 }
 void MetalBackend::encodeSpmvELL(BackendEncoder &encoder,
                                  const DeviceELLMatrix &A,
@@ -965,8 +1010,9 @@ void MetalBackend::encodeSpmvELL(BackendEncoder &encoder,
 
   const MetalDeviceVector &metalX = static_cast<const MetalDeviceVector &>(x);
   MetalDeviceVector &metalAx = static_cast<MetalDeviceVector &>(Ax);
+  const MetalDeviceELLMatrix& metalA = static_cast<const MetalDeviceELLMatrix&>(A);
 
-  encodeSpmvELLMetal(metalEncoder.encoder_, A, metalX, metalAx);
+  encodeSpmvELLMetal(metalEncoder.encoder_, metalA, metalX, metalAx);
 }
 
 void MetalBackend::encodeGaussSeidelColor(
@@ -977,11 +1023,19 @@ void MetalBackend::encodeGaussSeidelColor(
 
   MetalEncoder &metalEncoder = static_cast<MetalEncoder &>(encoder);
 
-  const MetalDeviceVector &metalRhs = static_cast<const MetalDeviceVector &>(rhs);
+  const MetalDeviceCSRMatrix &metalMat =
+      static_cast<const MetalDeviceCSRMatrix &>(matrix);
+
+  const MetalDeviceVector &metalRhs =
+      static_cast<const MetalDeviceVector &>(rhs);
   MetalDeviceVector &metalSolution = static_cast<MetalDeviceVector &>(solution);
 
-  encodeGaussSeidelColorMetal(metalEncoder.encoder_, matrix, colorVertices,
-                              colorStart, colorCount, metalRhs, metalSolution, omega);
+  const MetalDeviceIndexVector &metalColorVertices =
+      dynamic_cast<const MetalDeviceIndexVector &>(colorVertices);
+
+  encodeGaussSeidelColorMetal(metalEncoder.encoder_, metalMat,
+                              metalColorVertices, colorStart, colorCount,
+                              metalRhs, metalSolution, omega);
 
   // , const DeviceCSRMatrix &matrix, const DeviceIndexVector &colorVertices,
   // std::size_t colorStart, std::size_t colorCount, const DeviceVector &rhs,
@@ -1353,7 +1407,7 @@ void MetalBackend::scalarSqrt(const DeviceScalar &input, DeviceScalar &result) {
 
 DeviceCSRMatrix *MetalBackend::createCSRMatrix(const HostCSRMatrix &matrix) {
 
-  DeviceCSRMatrix *csr = new DeviceCSRMatrix(this->impl_->context, matrix);
+  DeviceCSRMatrix *csr = new MetalDeviceCSRMatrix(this->impl_->context, matrix);
 
   return csr;
 }
@@ -1366,30 +1420,40 @@ DeviceVector *MetalBackend::createVector(std::size_t size) {
 DeviceVector *MetalBackend::createVector(std::size_t size,
                                          const float *values) {
 
-  DeviceVector *devVec = new MetalDeviceVector(this->impl_->context, size, values);
+  DeviceVector *devVec =
+      new MetalDeviceVector(this->impl_->context, size, values);
   return devVec;
 }
 
 DeviceScalar *MetalBackend::createScalar() {
-  DeviceScalar *devSca = new DeviceScalar(this->impl_->context);
+  DeviceScalar *devSca = new MetalDeviceScalar(this->impl_->context);
 
   return devSca;
 }
 
 DeviceScalar *MetalBackend::createScalar(float value) {
-  DeviceScalar *devSca = new DeviceScalar(this->impl_->context, value);
+  DeviceScalar *devSca = new MetalDeviceScalar(this->impl_->context, value);
   return devSca;
 }
 
 DeviceIndexVector *MetalBackend::createIndexVector(std::size_t size) {
-  DeviceIndexVector *devVec = new DeviceIndexVector(this->impl_->context, size);
+  DeviceIndexVector *devVec =
+      new MetalDeviceIndexVector(this->impl_->context, size);
   return devVec;
 }
 
 DeviceIndexVector *MetalBackend::createIndexVector(std::size_t size,
                                                    const int *values) {
   DeviceIndexVector *devVec =
-      new DeviceIndexVector(this->impl_->context, size, values);
+      new MetalDeviceIndexVector(this->impl_->context, size, values);
   return devVec;
+}
+
+
+DeviceELLMatrix *MetalBackend::createELLMatrix(const HostELLMatrix& matrix){
+  DeviceELLMatrix *devEll = new MetalDeviceELLMatrix(this->impl_->context, matrix);
+
+  return devEll;
+
 }
 } // namespace gpuSolver

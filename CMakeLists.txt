@@ -81,16 +81,16 @@ if(APPLE)
             src/metal/MetalBackend.cc
             src/metal/MetalEncoder.cc
             src/metal/MetalDeviceVector.cc
-            src/DeviceIndexVector.cc
-            src/DeviceSparseMatrix.cc
-            src/DeviceScalar.cc
+            src/metal/MetalDeviceSparseMatrix.cc
+            src/metal/MetalDeviceIndexVector.cc
+            src/metal/MetalDeviceScalar.cc
+            src/metal/MetalDeviceELLMatrix.cc
             src/HostSparseMatrix.cc 
             src/Permutation.cc 
             src/ReorderingStrategies/IdentityReordering.cc
             src/ReorderingStrategies/RCMReordering.cc
             src/ReorderingStrategies/HierarchicalReordering.cc
             src/AMGHierarchy.cc
-            src/DeviceELLMatrix.cc
             src/HostELLMatrix.cc
             src/GraphColoring.cc
             src/BlockUtils.cc
@@ -128,31 +128,31 @@ if(APPLE)
     # ------------------------------------------------------------
 
     set(GPUSOLVER_METAL_VECTOR_SOURCE
-        "${PROJECT_SOURCE_DIR}/kernels/VectorKernels.metal"
+        "${PROJECT_SOURCE_DIR}/kernels/metal/VectorKernels.metal"
     )
 
     set(GPUSOLVER_METAL_SPMV_SOURCE
-        "${PROJECT_SOURCE_DIR}/kernels/SpMVKernels.metal"
+        "${PROJECT_SOURCE_DIR}/kernels/metal/SpMVKernels.metal"
     )
 
     set(GPUSOLVER_METAL_REDUCTION_SOURCE
-        "${PROJECT_SOURCE_DIR}/kernels/ReductionKernels.metal"
+        "${PROJECT_SOURCE_DIR}/kernels/metal/ReductionKernels.metal"
     )
 
     set(GPUSOLVER_METAL_SCALAR_SOURCE
-        "${PROJECT_SOURCE_DIR}/kernels/ScalarKernels.metal"
+        "${PROJECT_SOURCE_DIR}/kernels/metal/ScalarKernels.metal"
     )
 
     set(GPUSOLVER_METAL_GAUSS_SEIDEL_SOURCE
-      "${PROJECT_SOURCE_DIR}/kernels/GaussSeidelColoringKernels.metal"
+      "${PROJECT_SOURCE_DIR}/kernels/metal/GaussSeidelColoringKernels.metal"
     )
 
     set(GPUSOLVER_METAL_BLOCK_JACOBI_SOURCE
-      "${PROJECT_SOURCE_DIR}/kernels/Invert3x3Diagonal.metal"
+      "${PROJECT_SOURCE_DIR}/kernels/metal/Invert3x3Diagonal.metal"
     )
 
     set(GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_SOURCE
-      "${PROJECT_SOURCE_DIR}/kernels/GaussSeidelBlock3x3.metal"
+      "${PROJECT_SOURCE_DIR}/kernels/metal/GaussSeidelBlock3x3.metal"
     )
 
     set(GPUSOLVER_METAL_OUTPUT_DIR

@@ -1,4 +1,5 @@
-#include <GPUSolver/DeviceELLMatrix.h>
+#include <GPUSolver/metal/MetalDeviceELLMatrix.h>
+#include <GPUSolver/metal/MetalBackend.h>
 #include <GPUSolver/HostELLMatrix.h>
 #include <Metal/MTLBuffer.hpp>
 #include <Metal/MTLDevice.hpp>
@@ -8,7 +9,7 @@
 #include <cstring>
 
 namespace gpuSolver {
-struct DeviceELLMatrix::Impl {
+struct MetalDeviceELLMatrix::Impl {
   MTL::Buffer *ellColIdx = nullptr;
   MTL::Buffer *ellValues = nullptr;
 
@@ -23,7 +24,7 @@ struct DeviceELLMatrix::Impl {
   std::size_t overflowNnz = 0;
 };
 
-DeviceELLMatrix::DeviceELLMatrix(MetalContext &context,
+MetalDeviceELLMatrix::MetalDeviceELLMatrix(MetalContext &context,
                                  const HostELLMatrix &matrix) {
   impl_ = new Impl;
 
@@ -101,7 +102,7 @@ DeviceELLMatrix::DeviceELLMatrix(MetalContext &context,
   }
 }
 
-DeviceELLMatrix::~DeviceELLMatrix() {
+MetalDeviceELLMatrix::~MetalDeviceELLMatrix() {
   if (impl_->ellColIdx != nullptr) {
     impl_->ellColIdx->release();
   }
@@ -125,47 +126,47 @@ DeviceELLMatrix::~DeviceELLMatrix() {
   delete impl_;
 }
 
-std::size_t DeviceELLMatrix::rows() const
+std::size_t MetalDeviceELLMatrix::rows() const
 {
     return impl_->nRows;
 }
 
-std::size_t DeviceELLMatrix::cols() const
+std::size_t MetalDeviceELLMatrix::cols() const
 {
     return impl_->nCols;
 }
 
-std::size_t DeviceELLMatrix::ellWidth() const
+std::size_t MetalDeviceELLMatrix::ellWidth() const
 {
     return impl_->ellWidth;
 }
 
-std::size_t DeviceELLMatrix::overflowNnz() const
+std::size_t MetalDeviceELLMatrix::overflowNnz() const
 {
     return impl_->overflowNnz;
 }
 
-MTL::Buffer* DeviceELLMatrix::ellColIdxBuffer() const
+MTL::Buffer* MetalDeviceELLMatrix::ellColIdxBuffer() const
 {
     return impl_->ellColIdx;
 }
 
-MTL::Buffer* DeviceELLMatrix::ellValuesBuffer() const
+MTL::Buffer* MetalDeviceELLMatrix::ellValuesBuffer() const
 {
     return impl_->ellValues;
 }
 
-MTL::Buffer* DeviceELLMatrix::overflowRowPtrBuffer() const
+MTL::Buffer* MetalDeviceELLMatrix::overflowRowPtrBuffer() const
 {
     return impl_->overflowRowPtr;
 }
 
-MTL::Buffer* DeviceELLMatrix::overflowColIdxBuffer() const
+MTL::Buffer* MetalDeviceELLMatrix::overflowColIdxBuffer() const
 {
     return impl_->overflowColIdx;
 }
 
-MTL::Buffer* DeviceELLMatrix::overflowValuesBuffer() const
+MTL::Buffer* MetalDeviceELLMatrix::overflowValuesBuffer() const
 {
     return impl_->overflowValues;
 }

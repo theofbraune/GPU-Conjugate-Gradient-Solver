@@ -1,15 +1,16 @@
-#include <GPUSolver/DeviceScalar.h>
+#include <GPUSolver/metal/MetalDeviceScalar.h>
+#include <GPUSolver/metal/MetalBackend.h>
 #include <Metal/MTLBuffer.hpp>
 #include <Metal/MTLDevice.hpp>
 #include <Metal/MTLResource.hpp>
 
 namespace gpuSolver {
 
-struct DeviceScalar::Impl {
+struct MetalDeviceScalar::Impl {
   MTL::Buffer *buffer = nullptr;
 };
 
-DeviceScalar::DeviceScalar(MetalContext &context) {
+MetalDeviceScalar::MetalDeviceScalar(MetalContext &context) {
 
   this->impl_ = new Impl;
 
@@ -17,7 +18,7 @@ DeviceScalar::DeviceScalar(MetalContext &context) {
       sizeof(float), MTL::ResourceStorageModeShared);
 }
 
-DeviceScalar::DeviceScalar(MetalContext &context, float value) {
+MetalDeviceScalar::MetalDeviceScalar(MetalContext &context, float value) {
 
   this->impl_ = new Impl;
 
@@ -25,7 +26,7 @@ DeviceScalar::DeviceScalar(MetalContext &context, float value) {
       &value, sizeof(float), MTL::ResourceStorageModeShared);
 }
 
-DeviceScalar::~DeviceScalar() {
+MetalDeviceScalar::~MetalDeviceScalar() {
 
   if (impl_->buffer != nullptr) {
     impl_->buffer->release();
@@ -33,10 +34,10 @@ DeviceScalar::~DeviceScalar() {
   delete impl_;
 }
 
-MTL::Buffer *DeviceScalar::getNativeBuffer() const { return impl_->buffer; }
+MTL::Buffer *MetalDeviceScalar::getNativeBuffer() const { return impl_->buffer; }
 
 // ONLY for debugging purpose. Should never be used in a proper CG
-float DeviceScalar::download() const {
+float MetalDeviceScalar::download() const {
   const float *value = static_cast<const float *>(impl_->buffer->contents());
 
   return value[0];

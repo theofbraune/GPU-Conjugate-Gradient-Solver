@@ -1,4 +1,5 @@
-#include <GPUSolver/DeviceIndexVector.h>
+
+#include <GPUSolver/metal/MetalDeviceIndexVector.h>
 
 #include <GPUSolver/metal/MetalContext.h>
 
@@ -8,32 +9,31 @@
 #include <Metal/MTLResource.hpp>
 #include <cstddef>
 #include <cstring>
-#include <iterator>
 #include <stdexcept>
 #include <vector>
 
 namespace gpuSolver {
 
-struct DeviceIndexVector::Impl {
+struct MetalDeviceIndexVector::Impl {
   MTL::Buffer *buffer = nullptr;
   size_t size = 0;
 };
 
-DeviceIndexVector::DeviceIndexVector(MetalContext &context, std::size_t size)
+MetalDeviceIndexVector::MetalDeviceIndexVector(MetalContext &context, std::size_t size)
     : impl_(new Impl) {
   impl_->size = size;
   impl_->buffer = context.device()->newBuffer(size * sizeof(int),MTL::ResourceStorageModeShared);
 }
 
 
-MTL::Buffer *DeviceIndexVector::getNativeBuffer() {
+MTL::Buffer *MetalDeviceIndexVector::getNativeBuffer() {
   // check if the buffer is loaded
   if (impl_->buffer == nullptr) {
     throw std::runtime_error("The data in the buffer is not allocated! ");
   }
   return impl_->buffer;
 }
-MTL::Buffer *DeviceIndexVector::getNativeBuffer() const {
+MTL::Buffer *MetalDeviceIndexVector::getNativeBuffer() const {
   // check if the buffer is loaded
   if (impl_->buffer == nullptr) {
     throw std::runtime_error("The data in the buffer is not allocated! ");
@@ -41,30 +41,30 @@ MTL::Buffer *DeviceIndexVector::getNativeBuffer() const {
   return impl_->buffer;
 }
 
-DeviceIndexVector::DeviceIndexVector(MetalContext &context, const std::vector<int>& values)
+MetalDeviceIndexVector::MetalDeviceIndexVector(MetalContext &context, const std::vector<int>& values)
     : impl_(new Impl) {
   impl_->size = values.size();
   impl_->buffer = context.device()->newBuffer(values.data(),impl_->size * sizeof(int),MTL::ResourceStorageModeShared);
 }
 
-DeviceIndexVector::DeviceIndexVector(MetalContext &context, std::size_t size, const int* values)
+MetalDeviceIndexVector::MetalDeviceIndexVector(MetalContext &context, std::size_t size, const int* values)
     : impl_(new Impl) {
   impl_->size = size;
   impl_->buffer = context.device()->newBuffer(values,impl_->size * sizeof(int),MTL::ResourceStorageModeShared);
 }
 
-size_t DeviceIndexVector::size(){
+size_t MetalDeviceIndexVector::size(){
   return this->impl_->size;
 }
 
 
-size_t DeviceIndexVector::size() const {
+size_t MetalDeviceIndexVector::size() const {
   return this->impl_->size;
 }
 
 
 
-int* DeviceIndexVector::download() const{
+int* MetalDeviceIndexVector::download() const{
   if (impl_->buffer == nullptr) {
     throw std::runtime_error("The data in the buffer is not allocated! ");
   }
@@ -74,13 +74,13 @@ int* DeviceIndexVector::download() const{
   return resultValsRaw;
 }
 
-DeviceIndexVector::~DeviceIndexVector(){
+MetalDeviceIndexVector::~MetalDeviceIndexVector(){
   impl_->buffer->release();
   delete impl_;
 }
 
 
-void DeviceIndexVector::updateValues(const int* values, const size_t sizeOfValues){
+void MetalDeviceIndexVector::updateValues(const int* values, const size_t sizeOfValues){
 
   if (impl_->size != sizeOfValues) {
     throw std::runtime_error(" The passed values dont have the right size");

@@ -2,47 +2,26 @@
 
 #include <cstddef>
 
-namespace MTL {
-class Buffer;
-}
 
 namespace gpuSolver {
 
-class MetalContext;
-class MetalBackend;
-class HostELLMatrix;
-
 class DeviceELLMatrix {
 
-private:
-    struct Impl;
-    Impl* impl_;
-
-    MTL::Buffer* ellColIdxBuffer() const;
-    MTL::Buffer* ellValuesBuffer() const;
-
-    MTL::Buffer* overflowRowPtrBuffer() const;
-    MTL::Buffer* overflowColIdxBuffer() const;
-    MTL::Buffer* overflowValuesBuffer() const;
-
-    friend class MetalBackend;
 
 public:
-    DeviceELLMatrix(
-        MetalContext& context,
-        const HostELLMatrix& matrix
-    );
 
-    ~DeviceELLMatrix();
+    virtual ~DeviceELLMatrix() = default;
 
     DeviceELLMatrix(const DeviceELLMatrix&) = delete;
     DeviceELLMatrix& operator=(const DeviceELLMatrix&) = delete;
 
-    std::size_t rows() const;
-    std::size_t cols() const;
+    virtual std::size_t rows() const = 0;
+    virtual std::size_t cols() const = 0;
 
-    std::size_t ellWidth() const;
-    std::size_t overflowNnz() const;
+    virtual std::size_t ellWidth() const = 0;
+    virtual std::size_t overflowNnz() const = 0;
+protected:
+    DeviceELLMatrix() = default;
 };
 
 } // namespace gpuSolver

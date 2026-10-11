@@ -308,13 +308,12 @@ int main(int argc, char* argv[])
     gpuSolver::MetalContext context;
     gpuSolver::MetalBackend backend(context);
 
-    gpuSolver::DeviceCSRMatrix deviceCSR(
-        context,
-        csr);
+    gpuSolver::DeviceCSRMatrix* deviceCSR = backend.createCSRMatrix(csr);
+      // (
+      //   context,
+      //   csr);
 
-    gpuSolver::DeviceELLMatrix deviceELL(
-        context,
-        ell);
+    gpuSolver::DeviceELLMatrix* deviceELL = backend.createELLMatrix(ell);
 
     gpuSolver::DeviceVector* deviceX = backend.createVector(xPermuted.size(), xPermuted.data());
 
@@ -333,7 +332,7 @@ int main(int argc, char* argv[])
          ++iteration)
     {
         backend.spmv(
-            deviceCSR,
+            *deviceCSR,
             *deviceX,
             *deviceYCSR);
     }
@@ -345,7 +344,7 @@ int main(int argc, char* argv[])
          ++iteration)
     {
         backend.spmv(
-            deviceCSR,
+            *deviceCSR,
             *deviceX,
             *deviceYCSR);
     }
@@ -358,7 +357,7 @@ int main(int argc, char* argv[])
     coolDown(cooldownDuration);
 
     backend.spmvRepeated(
-        deviceCSR,
+        *deviceCSR,
         *deviceX,
         *deviceYCSR,
         warmupIterations);
@@ -366,7 +365,7 @@ int main(int argc, char* argv[])
     Clock::time_point csrBatchStart = Clock::now();
 
     backend.spmvRepeated(
-        deviceCSR,
+        *deviceCSR,
         *deviceX,
         *deviceYCSR,
         repetitions);
@@ -385,7 +384,7 @@ int main(int argc, char* argv[])
          ++iteration)
     {
         backend.spmv(
-            deviceELL,
+            *deviceELL,
             *deviceX,
             *deviceYELL);
     }
@@ -397,7 +396,7 @@ int main(int argc, char* argv[])
          ++iteration)
     {
         backend.spmv(
-            deviceELL,
+            *deviceELL,
             *deviceX,
             *deviceYELL);
     }
@@ -410,7 +409,7 @@ int main(int argc, char* argv[])
     coolDown(cooldownDuration);
 
     backend.spmvRepeated(
-        deviceELL,
+        *deviceELL,
         *deviceX,
         *deviceYELL,
         warmupIterations);
@@ -418,7 +417,7 @@ int main(int argc, char* argv[])
     Clock::time_point ellBatchStart = Clock::now();
 
     backend.spmvRepeated(
-        deviceELL,
+        *deviceELL,
         *deviceX,
         *deviceYELL,
         repetitions);
@@ -533,8 +532,10 @@ int main(int argc, char* argv[])
               << csrBatchMilliseconds / ellBatchMilliseconds
               << "x\n";
 
+    delete deviceCSR;
     delete deviceX;
     delete deviceYCSR;
     delete deviceYELL;
+    delete deviceELL;
     return 0;
 }

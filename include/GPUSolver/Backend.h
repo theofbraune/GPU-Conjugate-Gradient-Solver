@@ -8,7 +8,9 @@ class DeviceVector;
 class DeviceScalar;
 class DeviceCSRMatrix;
 class DeviceIndexVector;
+class DeviceELLMatrix;
 class HostCSRMatrix;
+class HostELLMatrix;
 
 class Backend {
 public:
@@ -35,6 +37,8 @@ public:
   virtual DeviceScalar *createScalar(float value) = 0;
 
   virtual DeviceCSRMatrix *createCSRMatrix(const HostCSRMatrix &matrix) = 0;
+
+  virtual DeviceELLMatrix *createELLMatrix(const HostELLMatrix& matrix) = 0;
 
   // --------------------------------------------------------
   // Low-level asynchronous encoding API.

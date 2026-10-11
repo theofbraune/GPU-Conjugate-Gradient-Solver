@@ -9,6 +9,10 @@
 #include <GPUSolver/DeviceSparseMatrix.h>
 #include <GPUSolver/DeviceVector.h>
 #include <GPUSolver/metal/MetalDeviceVector.h>
+#include <GPUSolver/metal/MetalDeviceSparseMatrix.h>
+#include <GPUSolver/metal/MetalDeviceIndexVector.h>
+#include <GPUSolver/metal/MetalDeviceScalar.h>
+#include <GPUSolver/metal/MetalDeviceELLMatrix.h>
 
 #include <GPUSolver/metal/MetalContext.h>
 
@@ -49,24 +53,24 @@ private:
   // --------------------------------------------------------
 
   void encodeSpmvMetal(MTL::ComputeCommandEncoder *encoder,
-                       const DeviceCSRMatrix &A, const MetalDeviceVector&x,
+                       const MetalDeviceCSRMatrix &A, const MetalDeviceVector&x,
                        MetalDeviceVector &Ax);
 
   void encodeSpmvELLMetal(MTL::ComputeCommandEncoder *encoder,
-                          const DeviceELLMatrix &A, const MetalDeviceVector &x,
+                          const MetalDeviceELLMatrix &A, const MetalDeviceVector &x,
                           MetalDeviceVector &Ax);
 
   void encodeDotMetal(MTL::ComputeCommandEncoder *encoder,
                       const MetalDeviceVector &x, const MetalDeviceVector &y,
-                      DeviceScalar &result);
+                      MetalDeviceScalar &result);
 
   void encodeScaleVectorMetal(MTL::ComputeCommandEncoder *encoder,
                               const MetalDeviceVector &scaleVector,
                               MetalDeviceVector &output);
 
   void encodeGaussSeidelColorMetal(MTL::ComputeCommandEncoder *encoder,
-                                   const DeviceCSRMatrix &matrix,
-                                   const DeviceIndexVector &colorVertices,
+                                   const MetalDeviceCSRMatrix &matrix,
+                                   const MetalDeviceIndexVector &colorVertices,
                                    std::size_t colorStart,
                                    std::size_t colorCount,
                                    const MetalDeviceVector &rhs,
@@ -79,8 +83,8 @@ private:
 
 
   void encodeBlockGaussSeidelColor3x3Metal(
-      MTL::ComputeCommandEncoder* encoder, const DeviceCSRMatrix &matrix,
-      const DeviceIndexVector &colorBlocks,
+      MTL::ComputeCommandEncoder* encoder, const MetalDeviceCSRMatrix &matrix,
+      const MetalDeviceIndexVector &colorBlocks,
       const MetalDeviceVector &diagonalInverses, std::size_t begin, std::size_t end,
       const MetalDeviceVector &rhs, MetalDeviceVector &solution, float omega);
 
@@ -92,7 +96,7 @@ private:
                         float scalar);
 
   void encodeScaleMetal(MTL::ComputeCommandEncoder *encoder, MetalDeviceVector &x,
-                        const DeviceScalar &scalar);
+                        const MetalDeviceScalar &scalar);
 
   void encodeCopyMetal(MTL::ComputeCommandEncoder *encoder,
                        const MetalDeviceVector &x, MetalDeviceVector &xCopy);
@@ -101,30 +105,30 @@ private:
                        const MetalDeviceVector &x, MetalDeviceVector &y);
 
   void encodeAxpyMetal(MTL::ComputeCommandEncoder *encoder,
-                       const DeviceScalar &alpha, const MetalDeviceVector &x,
+                       const MetalDeviceScalar &alpha, const MetalDeviceVector &x,
                        MetalDeviceVector &y);
 
   void encodeScalarSetMetal(MTL::ComputeCommandEncoder *encoder, float value,
-                            DeviceScalar &output);
+                            MetalDeviceScalar &output);
 
   void encodeScalarCopyMetal(MTL::ComputeCommandEncoder *encoder,
-                             const DeviceScalar &input, DeviceScalar &output);
+                             const MetalDeviceScalar &input, MetalDeviceScalar &output);
 
   void encodeScalarDivideMetal(MTL::ComputeCommandEncoder *encoder,
-                               const DeviceScalar &numerator,
-                               const DeviceScalar &denominator,
-                               DeviceScalar &result);
+                               const MetalDeviceScalar &numerator,
+                               const MetalDeviceScalar &denominator,
+                               MetalDeviceScalar &result);
 
   void encodeScalarMultiplyMetal(MTL::ComputeCommandEncoder *encoder,
-                                 const DeviceScalar &factor1,
-                                 const DeviceScalar &factor2,
-                                 DeviceScalar &result);
+                                 const MetalDeviceScalar &factor1,
+                                 const MetalDeviceScalar &factor2,
+                                 MetalDeviceScalar &result);
 
   void encodeScalarNegateMetal(MTL::ComputeCommandEncoder *encoder,
-                               const DeviceScalar &input, DeviceScalar &output);
+                               const MetalDeviceScalar &input, MetalDeviceScalar &output);
 
   void encodeScalarSqrtMetal(MTL::ComputeCommandEncoder *encoder,
-                             const DeviceScalar &input, DeviceScalar &output);
+                             const MetalDeviceScalar &input, MetalDeviceScalar &output);
 
   void ensureReductionScratchCapacity(std::size_t requiredCapacity);
 
@@ -285,6 +289,9 @@ public:
 
   void spmvRepeated(const DeviceELLMatrix &A, const DeviceVector &x,
                     DeviceVector &Ax, std::size_t repetitions);
+
+  
+  DeviceELLMatrix *createELLMatrix(const HostELLMatrix& matrix) override;
 
   DeviceCSRMatrix *createCSRMatrix(const HostCSRMatrix &matrix) override;
 

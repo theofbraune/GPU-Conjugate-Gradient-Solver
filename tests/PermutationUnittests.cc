@@ -204,7 +204,8 @@ TEST(PermutationTest, MetalSpMVWithRandomPermutation) {
   gpuSolver::MetalContext context;
   gpuSolver::MetalBackend backend(context);
 
-  gpuSolver::DeviceCSRMatrix deviceA(context, hostA);
+  gpuSolver::DeviceCSRMatrix* deviceA = backend.createCSRMatrix(hostA);
+    // (context, hostA);
 
   std::vector<float> xPermutedVector(xPermuted, xPermuted + n);
 
@@ -214,7 +215,7 @@ TEST(PermutationTest, MetalSpMVWithRandomPermutation) {
   gpuSolver::DeviceVector* deviceY = backend.createVector(n);
 
 
-  backend.spmv(deviceA, *deviceX, *deviceY);
+  backend.spmv(*deviceA, *deviceX, *deviceY);
 
   // --------------------------------------------------------
   // GPU gives y' = P y.
@@ -240,6 +241,7 @@ TEST(PermutationTest, MetalSpMVWithRandomPermutation) {
   delete[] xPermuted;
   delete[] yOriginal;
   delete permutation;
+  delete deviceA;
   delete deviceX;
   delete deviceY;
 }

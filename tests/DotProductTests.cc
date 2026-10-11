@@ -45,11 +45,11 @@ void testDotForSize(std::size_t n) {
 
   gpuSolver::DeviceVector *deviceY = backend.createVector(y.size(), y.data());
 
-  gpuSolver::DeviceScalar result(context);
+  gpuSolver::DeviceScalar*  result = backend.createScalar();
 
-  backend.dot(*deviceX, *deviceY, result);
+  backend.dot(*deviceX, *deviceY, *result);
 
-  const float gpuResult = result.download();
+  const float gpuResult = result->download();
   // const float tolerance = 1e-4 * std::max(1.0, std::abs(expected));
   const float tolerance = 1e-4 * (std::max(1.0f, std::abs(expected)));
 
@@ -57,6 +57,7 @@ void testDotForSize(std::size_t n) {
 
   delete deviceX;
   delete deviceY;
+  delete result;
 }
 
 } // namespace
@@ -89,11 +90,11 @@ TEST(MetalDot, Ones) {
 
   gpuSolver::DeviceVector *deviceY = backend.createVector(y.size(), y.data());
 
-  gpuSolver::DeviceScalar result(context);
+  gpuSolver::DeviceScalar *result = backend.createScalar();
 
-  backend.dot(*deviceX, *deviceY, result);
+  backend.dot(*deviceX, *deviceY, *result);
 
-  EXPECT_FLOAT_EQ(result.download(), static_cast<float>(n));
+  EXPECT_FLOAT_EQ(result->download(), static_cast<float>(n));
 
   delete deviceX;
   delete deviceY;
@@ -112,11 +113,11 @@ TEST(MetalDot, ZeroResult) {
 
   gpuSolver::DeviceVector* deviceY = backend.createVector(y.size(), y.data());
 
-  gpuSolver::DeviceScalar result(context);
+  gpuSolver::DeviceScalar* result = backend.createScalar();
 
-  backend.dot(*deviceX, *deviceY, result);
+  backend.dot(*deviceX, *deviceY, *result);
 
-  EXPECT_NEAR(result.download(), 0.0f, 1e-6f);
+  EXPECT_NEAR(result->download(), 0.0f, 1e-6f);
 
   delete deviceX;
   delete deviceY;
@@ -134,9 +135,9 @@ TEST(MetalDot, DifferentVectorSizesThrow) {
 
   gpuSolver::DeviceVector* deviceY = backend.createVector(y.size(), y.data());
 
-  gpuSolver::DeviceScalar result(context);
+  gpuSolver::DeviceScalar* result = backend.createScalar();
 
-  EXPECT_THROW(backend.dot(*deviceX, *deviceY, result), std::runtime_error);
+  EXPECT_THROW(backend.dot(*deviceX, *deviceY, *result), std::runtime_error);
 
   delete deviceX;
   delete deviceY;
