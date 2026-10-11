@@ -5,7 +5,7 @@
 #include <cstddef>
 namespace gpuSolver {
 
-class MetalJacobiPreconditioner : public Preconditioner {
+class JacobiPreconditioner : public Preconditioner {
 
   // std::size_t sizeVec;
   std::size_t diagonalSize_;
@@ -13,13 +13,13 @@ class MetalJacobiPreconditioner : public Preconditioner {
   float clampingTol = 1e-8f;
 
 public:
-  MetalJacobiPreconditioner();
+  JacobiPreconditioner();
 
-  ~MetalJacobiPreconditioner() override;
+  ~JacobiPreconditioner() override;
 
-  MetalJacobiPreconditioner(const MetalJacobiPreconditioner &) = delete;
+  JacobiPreconditioner(const JacobiPreconditioner &) = delete;
 
-  MetalJacobiPreconditioner &operator=(const MetalJacobiPreconditioner &) = delete;
+  JacobiPreconditioner &operator=(const JacobiPreconditioner &) = delete;
 
   void apply(Backend &backend, BackendEncoder &encoder,
              const DeviceVector &input, DeviceVector &output) override;

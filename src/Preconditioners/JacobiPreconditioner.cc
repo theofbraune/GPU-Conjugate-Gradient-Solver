@@ -1,18 +1,18 @@
 #include <GPUSolver/Backend.h>
 #include <GPUSolver/BackendEncoder.h>
 #include <GPUSolver/DeviceVector.h>
-#include <GPUSolver/Preconditioners/MetalJacobiPreconditioner.h>
+#include <GPUSolver/Preconditioners/JacobiPreconditioner.h>
 #include <cstddef>
 #include <cstdlib>
 #include <stdexcept>
 
 namespace gpuSolver {
 
-MetalJacobiPreconditioner::MetalJacobiPreconditioner(){
+JacobiPreconditioner::JacobiPreconditioner(){
   this->diagonalValuesInvDevice = nullptr;
 }
 
-void MetalJacobiPreconditioner::initialize(
+void JacobiPreconditioner::initialize(
     Backend &backend,
     const HostCSRMatrix &hostMatrix,
     const DeviceCSRMatrix &deviceMatrix)
@@ -47,7 +47,7 @@ void MetalJacobiPreconditioner::initialize(
                 if (std::abs(diagonalValue) < 1e-12f)
                 {
                     throw std::runtime_error(
-                        "MetalJacobiPreconditioner::initialize: "
+                        "JacobiPreconditioner::initialize: "
                         "zero diagonal entry."
                     );
                 }
@@ -63,7 +63,7 @@ void MetalJacobiPreconditioner::initialize(
         if (!diagonalFound)
         {
             throw std::runtime_error(
-                "MetalJacobiPreconditioner::initialize: "
+                "JacobiPreconditioner::initialize: "
                 "missing diagonal entry."
             );
         }
@@ -83,18 +83,18 @@ void MetalJacobiPreconditioner::initialize(
 }
 
 
-void MetalJacobiPreconditioner::apply(Backend &backend, BackendEncoder &encoder,
+void JacobiPreconditioner::apply(Backend &backend, BackendEncoder &encoder,
                                       const DeviceVector &input,
                                       DeviceVector &output) {
   if (diagonalValuesInvDevice == nullptr) {
     throw std::runtime_error(
-        "MetalJacobiPreconditioner::apply: preconditioner has no diagonal "
+        "JacobiPreconditioner::apply: preconditioner has no diagonal "
         "set.");
   }
 
   if (input.size() != diagonalSize_|| output.size() !=diagonalSize_) {
     throw std::runtime_error(
-        "MetalJacobiPreconditioner::apply: input/output size does not match "
+        "JacobiPreconditioner::apply: input/output size does not match "
         "the preconditioner's diagonal size.");
   }
   backend.encodeCopy(encoder, input, output);
@@ -102,7 +102,7 @@ void MetalJacobiPreconditioner::apply(Backend &backend, BackendEncoder &encoder,
 }
 
 
-MetalJacobiPreconditioner::~MetalJacobiPreconditioner() {
+JacobiPreconditioner::~JacobiPreconditioner() {
   delete diagonalValuesInvDevice;
 }
 

@@ -20,7 +20,7 @@ public:
 
   MetalDeviceCSRMatrix(MetalContext &context, const HostCSRMatrix &hostSparseMatrix);
 
-  ~MetalDeviceCSRMatrix();
+  ~MetalDeviceCSRMatrix() override;
 
   MetalDeviceCSRMatrix(const DeviceCSRMatrix &) = delete;
   MetalDeviceCSRMatrix &operator=(const DeviceCSRMatrix &) = delete;

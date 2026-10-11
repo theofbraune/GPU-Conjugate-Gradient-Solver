@@ -5,7 +5,7 @@
 #include <GPUSolver/CGSolver.h>
 #include <GPUSolver/Permutation.h>
 #include <GPUSolver/Preconditioners/DampedJacobiPreconditioner.h>
-#include <GPUSolver/Preconditioners/MetalJacobiPreconditioner.h>
+#include <GPUSolver/Preconditioners/JacobiPreconditioner.h>
 #include <GPUSolver/Preconditioners/MultigridDampedJacobiPreconditioner.h>
 #include <GPUSolver/Preconditioners/MultigridGaussSeidelPreconditioner.h>
 #include <GPUSolver/Preconditioners/SymmetricGaussSeidelPreconditioner.h>

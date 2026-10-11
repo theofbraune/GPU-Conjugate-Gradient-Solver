@@ -37,8 +37,8 @@ namespace gpuSolver {
       MetalDeviceIndexVector(MetalContext& context, const std::vector<int>&values);
       MetalDeviceIndexVector(MetalContext& context, std::size_t size, const int* values);
 
-      MetalDeviceIndexVector(const DeviceIndexVector&) = delete;
-      MetalDeviceIndexVector& operator=(const DeviceIndexVector&) = delete;
+      MetalDeviceIndexVector(const MetalDeviceIndexVector&) = delete;
+      MetalDeviceIndexVector& operator=(const MetalDeviceIndexVector&) = delete;
 
       size_t size() const override;
 

@@ -1,6 +1,6 @@
 #include <GPUSolver/CGSolver.h>
 #include <GPUSolver/Preconditioners/DampedJacobiPreconditioner.h>
-#include <GPUSolver/Preconditioners/MetalJacobiPreconditioner.h>
+#include <GPUSolver/Preconditioners/JacobiPreconditioner.h>
 #include <GPUSolver/ReorderingStrategies/RCMReordering.h>
 #include <GPUSolver/Permutation.h>
 #include <GPUSolver/metal/MetalBackend.h>
@@ -253,8 +253,8 @@ int main(int argc, char **argv) {
   }
 
   // gpuSolver::IdentityPreconditioner preconditioner;
-  // gpuSolver::MetalJacobiPreconditioner preconditioner;
-  // gpuSolver::MetalJacobiPreconditioner();
+  // gpuSolver::JacobiPreconditioner preconditioner;
+  // gpuSolver::JacobiPreconditioner();
   gpuSolver::DampedJacobiPreconditioner preconditioner(4, 0.9f);
 
   // --------------------------------------------------------

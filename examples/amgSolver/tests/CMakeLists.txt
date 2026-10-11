@@ -3,6 +3,8 @@
 # ------------------------------------------------------------
 
 include(GoogleTest)
+
+if(APPLE)
 add_executable(multigridUnitTests
     MultigridUnitTests.cc
 )
@@ -40,7 +42,7 @@ set_target_properties(benchmarkPermutations
         RUNTIME_OUTPUT_DIRECTORY
             "${CMAKE_BINARY_DIR}/bin/tests/amg"
 )
-
+endif()
 add_executable(AMGgraphColoringUnittest
   amgColoringCheck.cc
 )

@@ -53,6 +53,32 @@ endif()
 
 add_library(gpuSolver
   src/CGSolver.cc
+  src/HostSparseMatrix.cc 
+  src/Permutation.cc 
+  src/ReorderingStrategies/IdentityReordering.cc
+  src/ReorderingStrategies/RCMReordering.cc
+  src/ReorderingStrategies/HierarchicalReordering.cc
+  src/AMGHierarchy.cc
+  src/HostELLMatrix.cc
+  src/GraphColoring.cc
+  src/BlockUtils.cc
+  src/Preconditioners/IdentityPreconditioner.cc
+  src/Preconditioners/JacobiPreconditioner.cc
+  src/Preconditioners/DampedJacobiPreconditioner.cc
+  src/Preconditioners/MultigridDampedJacobiPreconditioner.cc
+  src/Preconditioners/SymmetricGaussSeidelPreconditioner.cc
+  src/Preconditioners/MultigridGaussSeidelPreconditioner.cc
+  src/Preconditioners/BlockJacobiPreconditioner.cc 
+  src/Preconditioners/BlockGaussSeidelPreconditioner.cc
+  src/Preconditioners/MultigridBlockGaussSeidelPreconditioner.cc
+  src/Preconditioners/MultigridBlockJacobiPreconditioner.cc
+  src/Preconditioners/MultigridHybridBlockPreconditioner.cc
+  src/SparseMatrixUtils.cc
+  src/Smoothers/DampedJacobiSmoother.cc
+  src/Smoothers/BlockJacobiSmoother.cc
+  src/Smoothers/BlockGaussSeidelSmoother.cc
+  src/Smoothers/SymmetricGaussSeidelSmoother.cc
+  src/Smoothers/MultigridSmoother.cc
 )
 
 add_library(gpuSolver::gpuSolver ALIAS gpuSolver)
@@ -85,32 +111,6 @@ if(APPLE)
             src/metal/MetalDeviceIndexVector.cc
             src/metal/MetalDeviceScalar.cc
             src/metal/MetalDeviceELLMatrix.cc
-            src/HostSparseMatrix.cc 
-            src/Permutation.cc 
-            src/ReorderingStrategies/IdentityReordering.cc
-            src/ReorderingStrategies/RCMReordering.cc
-            src/ReorderingStrategies/HierarchicalReordering.cc
-            src/AMGHierarchy.cc
-            src/HostELLMatrix.cc
-            src/GraphColoring.cc
-            src/BlockUtils.cc
-            src/Preconditioners/IdentityPreconditioner.cc
-            src/Preconditioners/MetalJacobiPreconditioner.cc
-            src/Preconditioners/DampedJacobiPreconditioner.cc
-            src/Preconditioners/MultigridDampedJacobiPreconditioner.cc
-            src/Preconditioners/SymmetricGaussSeidelPreconditioner.cc
-            src/Preconditioners/MultigridGaussSeidelPreconditioner.cc
-            src/Preconditioners/BlockJacobiPreconditioner.cc 
-            src/Preconditioners/BlockGaussSeidelPreconditioner.cc
-            src/Preconditioners/MultigridBlockGaussSeidelPreconditioner.cc
-            src/Preconditioners/MultigridBlockJacobiPreconditioner.cc
-            src/Preconditioners/MultigridHybridBlockPreconditioner.cc
-            src/SparseMatrixUtils.cc
-            src/Smoothers/DampedJacobiSmoother.cc
-            src/Smoothers/BlockJacobiSmoother.cc
-            src/Smoothers/BlockGaussSeidelSmoother.cc
-            src/Smoothers/SymmetricGaussSeidelSmoother.cc
-            src/Smoothers/MultigridSmoother.cc
     )
 
     target_link_libraries(gpuSolver

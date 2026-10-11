@@ -1,5 +1,7 @@
-add_subdirectory(amgSolver)
+if(APPLE)
 add_subdirectory(poissonSurface)
 add_subdirectory(poissonTetmesh)
 add_subdirectory(multigridPoisson)
 add_subdirectory(elasticity)
+endif()
+add_subdirectory(amgSolver)
