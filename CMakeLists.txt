@@ -163,6 +163,7 @@ if(GPUSOLVER_BACKEND STREQUAL "AUTO")
         check_language(CUDA)
 
         if(CMAKE_CUDA_COMPILER)
+            message(" select cuda backend")
 
             set(GPUSOLVER_SELECTED_BACKEND "CUDA")
 
