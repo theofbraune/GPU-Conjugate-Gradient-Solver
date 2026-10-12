@@ -2,7 +2,8 @@
 # AMG solver tests
 # ------------------------------------------------------------
 
-include(GoogleTest)
+include(googletest)
+include(libigl)
 
 if(APPLE)
 add_executable(multigridUnitTests
@@ -23,7 +24,6 @@ set_target_properties(multigridUnitTests
             "${CMAKE_BINARY_DIR}/bin/tests/amg"
 )
 
-include(libigl)
 
 add_executable(benchmarkPermutations
   benchmarkDifferentPermutations.cc

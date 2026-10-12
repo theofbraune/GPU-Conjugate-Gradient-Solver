@@ -92,6 +92,7 @@ target_include_directories(gpuSolver
 target_link_libraries(gpuSolver
     PUBLIC
         Eigen3::Eigen
+        glog::glog
 )
 
 target_compile_features(gpuSolver
@@ -116,7 +117,6 @@ if(APPLE)
     target_link_libraries(gpuSolver
         PRIVATE
             metal::metal
-            glog::glog
     )
 
     target_compile_definitions(gpuSolver

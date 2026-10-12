@@ -6,11 +6,13 @@ if(APPLE)
     # https://gitlab.com/libeigen/eigen/-/issues/2420
     set(EIGEN_BLAS_LAPACK_DEFAULT OFF)
 else()
-    set(EIGEN_BLAS_LAPACK_DEFAULT ON)
+  set(EIGEN_BLAS_LAPACK_DEFAULT OFF)
+
+  set(EIGEN_WITH_BLAS OFF)
 endif()
 
 option(EIGEN_WITH_MKL "Use Eigen with MKL" OFF)
-option(EIGEN_WITH_BLAS "Use Eigen with BLAS" ${EIGEN_BLAS_LAPACK_DEFAULT})
+# option(EIGEN_WITH_BLAS "Use Eigen with BLAS" ${EIGEN_BLAS_LAPACK_DEFAULT})
 option(EIGEN_WITH_LAPACK "Use Eigen with LAPACK" ${EIGEN_BLAS_LAPACK_DEFAULT})
 option(EIGEN_DONT_VECTORIZE "Disable Eigen vectorization" OFF)
 
