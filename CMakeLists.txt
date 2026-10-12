@@ -25,6 +25,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 list(PREPEND CMAKE_MODULE_PATH
     ${PROJECT_SOURCE_DIR}/cmake/settings
     ${PROJECT_SOURCE_DIR}/cmake/recipes
+    ${PROJECT_SOURCE_DIR}/cmake/backends
 )
 
 include(CPMConfig)
@@ -33,395 +34,204 @@ include(CPMConfig)
 # Options
 # ------------------------------------------------------------
 
-option(GPUSOLVER_BUILD_EXAMPLES "Build gpuSolver examples" ON)
-option(GPUSOLVER_BUILD_TESTS    "Build gpuSolver tests" ON)
+option(
+    GPUSOLVER_BUILD_EXAMPLES
+    "Build gpuSolver examples"
+    ON
+)
+
+option(
+    GPUSOLVER_BUILD_TESTS
+    "Build gpuSolver tests"
+    ON
+)
+
+set(
+    GPUSOLVER_BACKEND
+    "AUTO"
+    CACHE STRING
+    "Backend to use: AUTO, METAL, CUDA, or CPU"
+)
+
+set_property(
+    CACHE GPUSOLVER_BACKEND
+    PROPERTY STRINGS
+        AUTO
+        METAL
+        CUDA
+        CPU
+)
+
+string(
+    TOUPPER
+    "${GPUSOLVER_BACKEND}"
+    GPUSOLVER_BACKEND
+)
 
 # ------------------------------------------------------------
-# Dependencies required by the actual solver
+# Dependencies required by core solver
 # ------------------------------------------------------------
 
 include(eigen)
 include(glog)
 
-if(APPLE)
-    include(metal)
-endif()
-
 # ------------------------------------------------------------
-# gpuSolver library
+# Core library
 # ------------------------------------------------------------
 
-add_library(gpuSolver
-  src/CGSolver.cc
-  src/HostSparseMatrix.cc 
-  src/Permutation.cc 
-  src/ReorderingStrategies/IdentityReordering.cc
-  src/ReorderingStrategies/RCMReordering.cc
-  src/ReorderingStrategies/HierarchicalReordering.cc
-  src/AMGHierarchy.cc
-  src/HostELLMatrix.cc
-  src/GraphColoring.cc
-  src/BlockUtils.cc
-  src/Preconditioners/IdentityPreconditioner.cc
-  src/Preconditioners/JacobiPreconditioner.cc
-  src/Preconditioners/DampedJacobiPreconditioner.cc
-  src/Preconditioners/MultigridDampedJacobiPreconditioner.cc
-  src/Preconditioners/SymmetricGaussSeidelPreconditioner.cc
-  src/Preconditioners/MultigridGaussSeidelPreconditioner.cc
-  src/Preconditioners/BlockJacobiPreconditioner.cc 
-  src/Preconditioners/BlockGaussSeidelPreconditioner.cc
-  src/Preconditioners/MultigridBlockGaussSeidelPreconditioner.cc
-  src/Preconditioners/MultigridBlockJacobiPreconditioner.cc
-  src/Preconditioners/MultigridHybridBlockPreconditioner.cc
-  src/SparseMatrixUtils.cc
-  src/Smoothers/DampedJacobiSmoother.cc
-  src/Smoothers/BlockJacobiSmoother.cc
-  src/Smoothers/BlockGaussSeidelSmoother.cc
-  src/Smoothers/SymmetricGaussSeidelSmoother.cc
-  src/Smoothers/MultigridSmoother.cc
+add_library(
+    gpuSolverCore
+
+    src/CGSolver.cc
+    src/HostSparseMatrix.cc
+    src/Permutation.cc
+
+    src/ReorderingStrategies/IdentityReordering.cc
+    src/ReorderingStrategies/RCMReordering.cc
+    src/ReorderingStrategies/HierarchicalReordering.cc
+
+    src/AMGHierarchy.cc
+    src/HostELLMatrix.cc
+    src/GraphColoring.cc
+    src/BlockUtils.cc
+    src/SparseMatrixUtils.cc
+
+    src/Preconditioners/IdentityPreconditioner.cc
+    src/Preconditioners/JacobiPreconditioner.cc
+    src/Preconditioners/DampedJacobiPreconditioner.cc
+    src/Preconditioners/MultigridDampedJacobiPreconditioner.cc
+    src/Preconditioners/SymmetricGaussSeidelPreconditioner.cc
+    src/Preconditioners/MultigridGaussSeidelPreconditioner.cc
+    src/Preconditioners/BlockJacobiPreconditioner.cc
+    src/Preconditioners/BlockGaussSeidelPreconditioner.cc
+    src/Preconditioners/MultigridBlockGaussSeidelPreconditioner.cc
+    src/Preconditioners/MultigridBlockJacobiPreconditioner.cc
+    src/Preconditioners/MultigridHybridBlockPreconditioner.cc
+
+    src/Smoothers/DampedJacobiSmoother.cc
+    src/Smoothers/BlockJacobiSmoother.cc
+    src/Smoothers/BlockGaussSeidelSmoother.cc
+    src/Smoothers/SymmetricGaussSeidelSmoother.cc
+    src/Smoothers/MultigridSmoother.cc
 )
 
-add_library(gpuSolver::gpuSolver ALIAS gpuSolver)
+add_library(
+    gpuSolver::core
+    ALIAS gpuSolverCore
+)
 
-target_include_directories(gpuSolver
+target_include_directories(
+    gpuSolverCore
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(gpuSolver
+target_link_libraries(
+    gpuSolverCore
     PUBLIC
         Eigen3::Eigen
         glog::glog
 )
 
-target_compile_features(gpuSolver
+target_compile_features(
+    gpuSolverCore
     PUBLIC
         cxx_std_17
 )
 
-if(APPLE)
-    target_sources(gpuSolver
-        PRIVATE
-            src/metal/MetalContext.cc
-            src/metal/MetalImplementation.cc
-            src/metal/MetalBackend.cc
-            src/metal/MetalEncoder.cc
-            src/metal/MetalDeviceVector.cc
-            src/metal/MetalDeviceSparseMatrix.cc
-            src/metal/MetalDeviceIndexVector.cc
-            src/metal/MetalDeviceScalar.cc
-            src/metal/MetalDeviceELLMatrix.cc
+set_target_properties(
+    gpuSolverCore
+    PROPERTIES
+        FOLDER core
+)
+
+# ------------------------------------------------------------
+# Backend selection
+# ------------------------------------------------------------
+
+include(CheckLanguage)
+
+if(GPUSOLVER_BACKEND STREQUAL "AUTO")
+
+    if(APPLE)
+
+        set(GPUSOLVER_SELECTED_BACKEND "METAL")
+
+    else()
+
+        check_language(CUDA)
+
+        if(CMAKE_CUDA_COMPILER)
+
+            set(GPUSOLVER_SELECTED_BACKEND "CUDA")
+
+        else()
+
+            set(GPUSOLVER_SELECTED_BACKEND "CPU")
+
+        endif()
+
+    endif()
+
+else()
+
+    set(
+        GPUSOLVER_SELECTED_BACKEND
+        "${GPUSOLVER_BACKEND}"
     )
 
-    target_link_libraries(gpuSolver
-        PRIVATE
-            metal::metal
-    )
-
-    target_compile_definitions(gpuSolver
-        PRIVATE
-            GPUSOLVER_USE_METAL
-    )
-    # ------------------------------------------------------------
-    # Metal kernel sources
-    # ------------------------------------------------------------
-
-    set(GPUSOLVER_METAL_VECTOR_SOURCE
-        "${PROJECT_SOURCE_DIR}/kernels/metal/VectorKernels.metal"
-    )
-
-    set(GPUSOLVER_METAL_SPMV_SOURCE
-        "${PROJECT_SOURCE_DIR}/kernels/metal/SpMVKernels.metal"
-    )
-
-    set(GPUSOLVER_METAL_REDUCTION_SOURCE
-        "${PROJECT_SOURCE_DIR}/kernels/metal/ReductionKernels.metal"
-    )
-
-    set(GPUSOLVER_METAL_SCALAR_SOURCE
-        "${PROJECT_SOURCE_DIR}/kernels/metal/ScalarKernels.metal"
-    )
-
-    set(GPUSOLVER_METAL_GAUSS_SEIDEL_SOURCE
-      "${PROJECT_SOURCE_DIR}/kernels/metal/GaussSeidelColoringKernels.metal"
-    )
-
-    set(GPUSOLVER_METAL_BLOCK_JACOBI_SOURCE
-      "${PROJECT_SOURCE_DIR}/kernels/metal/Invert3x3Diagonal.metal"
-    )
-
-    set(GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_SOURCE
-      "${PROJECT_SOURCE_DIR}/kernels/metal/GaussSeidelBlock3x3.metal"
-    )
-
-    set(GPUSOLVER_METAL_OUTPUT_DIR
-        "${CMAKE_BINARY_DIR}/metal"
-    )
-
-    set(GPUSOLVER_METAL_VECTOR_AIR
-        "${GPUSOLVER_METAL_OUTPUT_DIR}/vector.air"
-    )
-
-    set(GPUSOLVER_METAL_SPMV_AIR
-        "${GPUSOLVER_METAL_OUTPUT_DIR}/spmv.air"
-    )
-
-    set(GPUSOLVER_METAL_REDUCTION_AIR
-        "${GPUSOLVER_METAL_OUTPUT_DIR}/reduction.air"
-    )
-
-    set(GPUSOLVER_METAL_SCALAR_AIR
-        "${GPUSOLVER_METAL_OUTPUT_DIR}/scalar.air"
-    )
-    set(GPUSOLVER_METAL_GAUSS_SEIDEL_AIR
-      "${GPUSOLVER_METAL_OUTPUT_DIR}/gaussSeidel.air"
-    )
-
-    set(GPUSOLVER_METAL_BLOCK_JACOBI_AIR
-      "${GPUSOLVER_METAL_OUTPUT_DIR}/blockJacobi.air"
-    )
-    set(GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_AIR
-      "${GPUSOLVER_METAL_OUTPUT_DIR}/blockGaussSeidel.air"
-    )
-
-    set(GPUSOLVER_METAL_LIBRARY
-        "${GPUSOLVER_METAL_OUTPUT_DIR}/gpuSolver.metallib"
-    )
-
-    file(MAKE_DIRECTORY
-        "${GPUSOLVER_METAL_OUTPUT_DIR}"
-    )
-
-
-    # ------------------------------------------------------------
-    # Compile VectorKernels.metal -> vector.air
-    # ------------------------------------------------------------
-
-    add_custom_command(
-        OUTPUT
-            ${GPUSOLVER_METAL_VECTOR_AIR}
-
-        COMMAND
-            xcrun
-            -sdk macosx
-            metal
-            -c
-            ${GPUSOLVER_METAL_VECTOR_SOURCE}
-            -o
-            ${GPUSOLVER_METAL_VECTOR_AIR}
-
-        DEPENDS
-            ${GPUSOLVER_METAL_VECTOR_SOURCE}
-
-        COMMENT
-            "Compiling Metal vector kernels"
-    )
-
-
-    # ------------------------------------------------------------
-    # Compile SpMVKernels.metal -> spmv.air
-    # ------------------------------------------------------------
-
-    add_custom_command(
-        OUTPUT
-            ${GPUSOLVER_METAL_SPMV_AIR}
-
-        COMMAND
-            xcrun
-            -sdk macosx
-            metal
-            -c
-            ${GPUSOLVER_METAL_SPMV_SOURCE}
-            -o
-            ${GPUSOLVER_METAL_SPMV_AIR}
-
-        DEPENDS
-            ${GPUSOLVER_METAL_SPMV_SOURCE}
-
-        COMMENT
-            "Compiling Metal SpMV kernels"
-    )
-
-
-    # ------------------------------------------------------------
-    # Compile ReductionKernels.metal -> reduction.air
-    # ------------------------------------------------------------
-
-    add_custom_command(
-        OUTPUT
-            ${GPUSOLVER_METAL_REDUCTION_AIR}
-
-        COMMAND
-            xcrun
-            -sdk macosx
-            metal
-            -c
-            ${GPUSOLVER_METAL_REDUCTION_SOURCE}
-            -o
-            ${GPUSOLVER_METAL_REDUCTION_AIR}
-
-        DEPENDS
-            ${GPUSOLVER_METAL_REDUCTION_SOURCE}
-
-        COMMENT
-            "Compiling Metal reduction kernels"
-    )
-
-    # ------------------------------------------------------------
-    # Compile ScalarKernels.metal -> scalar.air
-    # ------------------------------------------------------------
-
-    add_custom_command(
-        OUTPUT
-        ${GPUSOLVER_METAL_SCALAR_AIR}
-
-        COMMAND
-            xcrun
-            -sdk macosx
-            metal
-            -c
-            ${GPUSOLVER_METAL_SCALAR_SOURCE}
-            -o
-            ${GPUSOLVER_METAL_SCALAR_AIR}
-
-        DEPENDS
-        ${GPUSOLVER_METAL_SCALAR_SOURCE}
-
-        COMMENT
-        "Compiling Metal scalar kernels"
-    )
-
-    # ------------------------------------------------------------
-    # Compile GaussSeidelColoringKernels.metal -> gaussSeidel.air
-    # ------------------------------------------------------------
-
-    add_custom_command(
-        OUTPUT
-        ${GPUSOLVER_METAL_GAUSS_SEIDEL_AIR}
-
-        COMMAND
-            xcrun
-            -sdk macosx
-            metal
-            -c
-            ${GPUSOLVER_METAL_GAUSS_SEIDEL_SOURCE}
-            -o
-            ${GPUSOLVER_METAL_GAUSS_SEIDEL_AIR}
-
-        DEPENDS
-        ${GPUSOLVER_METAL_GAUSS_SEIDEL_SOURCE}
-
-        COMMENT
-        "Compiling Metal gauss seidel kernels"
-    )
-
-    # ------------------------------------------------------------
-    # Compile BlockJacobiKernels.metal -> blockJacobi.air
-    # ------------------------------------------------------------
-
-    add_custom_command(
-        OUTPUT
-        ${GPUSOLVER_METAL_BLOCK_JACOBI_AIR}
-
-        COMMAND
-            xcrun
-            -sdk macosx
-            metal
-            -c
-            ${GPUSOLVER_METAL_BLOCK_JACOBI_SOURCE}
-            -o
-            ${GPUSOLVER_METAL_BLOCK_JACOBI_AIR}
-
-        DEPENDS
-        ${GPUSOLVER_METAL_BLOCK_JACOBI_SOURCE}
-
-        COMMENT
-        "Compiling Metal block jacobi kernels"
-    )
-
-    # ------------------------------------------------------------
-    # Compile BlockGaussSeidel.metal -> blockGaussSeidel.air
-    # ------------------------------------------------------------
-
-    add_custom_command(
-        OUTPUT
-        ${GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_AIR}
-
-        COMMAND
-            xcrun
-            -sdk macosx
-            metal
-            -c
-            ${GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_SOURCE}
-            -o
-            ${GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_AIR}
-
-        DEPENDS
-        ${GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_SOURCE}
-
-        COMMENT
-        "Compiling Metal block gauss seidel kernels"
-    )
-
-    # ------------------------------------------------------------
-    # Link all AIR files into one metallib
-    # ------------------------------------------------------------
-
-    add_custom_command(
-        OUTPUT
-            ${GPUSOLVER_METAL_LIBRARY}
-
-        COMMAND
-            xcrun
-            -sdk macosx
-            metallib
-            ${GPUSOLVER_METAL_VECTOR_AIR}
-            ${GPUSOLVER_METAL_SPMV_AIR}
-            ${GPUSOLVER_METAL_REDUCTION_AIR}
-            ${GPUSOLVER_METAL_SCALAR_AIR}
-            ${GPUSOLVER_METAL_GAUSS_SEIDEL_AIR}
-            ${GPUSOLVER_METAL_BLOCK_JACOBI_AIR}
-            ${GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_AIR}
-            -o
-            ${GPUSOLVER_METAL_LIBRARY}
-
-        DEPENDS
-            ${GPUSOLVER_METAL_VECTOR_AIR}
-            ${GPUSOLVER_METAL_SPMV_AIR}
-            ${GPUSOLVER_METAL_REDUCTION_AIR}
-            ${GPUSOLVER_METAL_SCALAR_AIR}
-            ${GPUSOLVER_METAL_GAUSS_SEIDEL_AIR}
-            ${GPUSOLVER_METAL_BLOCK_JACOBI_AIR}
-            ${GPUSOLVER_METAL_BLOCK_GAUSS_SEIDEL_AIR}
-
-
-        COMMENT
-            "Linking Metal library gpuSolver.metallib"
-    )
-
-
-    add_custom_target(gpuSolverMetalKernels
-        DEPENDS
-            ${GPUSOLVER_METAL_LIBRARY}
-    )
-
-
-    add_dependencies(
-        gpuSolver
-        gpuSolverMetalKernels
-    )
-
-
-    target_compile_definitions(
-        gpuSolver
-        PRIVATE
-            GPUSOLVER_METAL_LIBRARY="${GPUSOLVER_METAL_LIBRARY}"
-    )
 endif()
 
-set_target_properties(gpuSolver PROPERTIES
-    FOLDER core
+message(
+    STATUS
+    "gpuSolver backend: ${GPUSOLVER_SELECTED_BACKEND}"
+)
+
+# ------------------------------------------------------------
+# Backend implementation
+# ------------------------------------------------------------
+
+if(GPUSOLVER_SELECTED_BACKEND STREQUAL "METAL")
+
+    include(MetalBackend)
+
+elseif(GPUSOLVER_SELECTED_BACKEND STREQUAL "CUDA")
+
+    include(CudaBackend)
+
+elseif(GPUSOLVER_SELECTED_BACKEND STREQUAL "CPU")
+
+    include(CpuBackend)
+
+else()
+
+    message(
+        FATAL_ERROR
+        "Unknown GPUSOLVER_BACKEND='${GPUSOLVER_SELECTED_BACKEND}'"
+    )
+
+endif()
+
+# ------------------------------------------------------------
+# Public gpuSolver target
+# ------------------------------------------------------------
+
+add_library(
+    gpuSolver
+    INTERFACE
+)
+
+target_link_libraries(
+    gpuSolver
+    INTERFACE
+        gpuSolverCore
+        ${GPUSOLVER_BACKEND_TARGET}
+)
+
+add_library(
+    gpuSolver::gpuSolver
+    ALIAS gpuSolver
 )
 
 # ------------------------------------------------------------
@@ -437,6 +247,9 @@ endif()
 # ------------------------------------------------------------
 
 if(GPUSOLVER_BUILD_TESTS)
+
     include(CTest)
+
     add_subdirectory(tests)
+
 endif()
