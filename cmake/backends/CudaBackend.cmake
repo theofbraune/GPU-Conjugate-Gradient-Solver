@@ -27,7 +27,10 @@ add_library(
     gpuSolverCuda
 
     src/cuda/CudaBackend.cc
+    src/cuda/CudaEncoder.cc 
+    src/cuda/CudaDeviceVector.cc
     kernels/cuda/CudaSmokeTest.cu
+    kernels/cuda/VectorKernels.cu
 )
 
 target_include_directories(
@@ -40,8 +43,6 @@ target_link_libraries(
     gpuSolverCuda
     PUBLIC
         gpuSolverCore
-
-    PRIVATE
         CUDA::cudart
 )
 
