@@ -404,6 +404,9 @@ int main(int argc, char** argv)
     // Set up Metal backend
     // ========================================================
 
+    gpuSolver::CPUBackend cpuBackend_impl;
+    gpuSolver::Backend* cpuBackend = &cpuBackend_impl;
+
     gpuSolver::Backend* backend;
 #if defined(GPUSOLVER_USE_METAL)
 
@@ -594,6 +597,137 @@ int main(int argc, char** argv)
     }
 
     // ========================================================
+    // 5. Single-level damped Jacobi CPU
+    // ========================================================
+
+    BenchmarkResult jacobiResultCPU;
+
+    {
+        const Clock::time_point setupStart = Clock::now();
+
+        gpuSolver::DampedJacobiPreconditioner preconditioner(4, 0.9f);
+
+        gpuSolver::CGSolver solver(*cpuBackend, preconditioner, K_reduced, mgPermutations[0]);
+
+        solver.setMaxIterations(maxCGIterations);
+        solver.setTolerance(residualTolerance);
+
+        const double setupTime = elapsedMs(setupStart, Clock::now());
+
+        jacobiResultCPU = benchmarkSolver(
+            "Damped Jacobi CPU",
+            solver,
+            K_reduced,
+            bReduced,
+            boundaryTemperature,
+            indexReduced,
+            setupTime
+        );
+    }
+
+    // ========================================================
+    // 6. Single-level symmetric Gauss-Seidel
+    // ========================================================
+
+    BenchmarkResult gsResultCPU;
+
+    {
+        const Clock::time_point setupStart = Clock::now();
+
+        gpuSolver::SymmetricGaussSeidelPreconditioner preconditioner(1.0f);
+
+        gpuSolver::CGSolver solver(*cpuBackend, preconditioner, K_reduced, mgPermutations[0]);
+
+        solver.setMaxIterations(maxCGIterations);
+        solver.setTolerance(residualTolerance);
+
+        const double setupTime = elapsedMs(setupStart, Clock::now());
+
+        gsResultCPU = benchmarkSolver(
+            "Symmetric Gauss-Seidel CPU",
+            solver,
+            K_reduced,
+            bReduced,
+            boundaryTemperature,
+            indexReduced,
+            setupTime
+        );
+    }
+
+    // ========================================================
+    // 7. Multigrid damped Jacobi
+    // ========================================================
+
+    BenchmarkResult mgJacobiResultCPU;
+
+    {
+        const Clock::time_point setupStart = Clock::now();
+
+        gpuSolver::MultigridDampedJacobiPreconditioner preconditioner(
+            *cpuBackend,
+            hierarchyForA,
+            mgPermutations,
+            2, // Pre-smoothing steps
+            2, // Post-smoothing steps
+            1, // Number of V-cycles
+            0.7f // Jacobi weight
+        );
+
+        gpuSolver::CGSolver solver(*cpuBackend, preconditioner, K_reduced, mgPermutations[0]);
+
+        solver.setMaxIterations(maxCGIterations);
+        solver.setTolerance(residualTolerance);
+
+        const double setupTime = elapsedMs(setupStart, Clock::now());
+
+        mgJacobiResultCPU = benchmarkSolver(
+            "MG + damped Jacobi CPU",
+            solver,
+            K_reduced,
+            bReduced,
+            boundaryTemperature,
+            indexReduced,
+            setupTime
+        );
+    }
+
+    // ========================================================
+    // 8. Multigrid symmetric Gauss-Seidel
+    // ========================================================
+
+    BenchmarkResult mgGSResultCPU;
+
+    {
+        const Clock::time_point setupStart = Clock::now();
+
+        gpuSolver::MultigridGaussSeidelPreconditioner preconditioner(
+            *cpuBackend,
+            hierarchyForA,
+            mgPermutations,
+            1, // Pre-smoothing steps
+            1, // Post-smoothing steps
+            1, // Number of V-cycles
+            1.0f // GS relaxation
+        );
+
+        gpuSolver::CGSolver solver(*cpuBackend, preconditioner, K_reduced, mgPermutations[0]);
+
+        solver.setMaxIterations(maxCGIterations);
+        solver.setTolerance(residualTolerance);
+
+        const double setupTime = elapsedMs(setupStart, Clock::now());
+
+        mgGSResultCPU = benchmarkSolver(
+            "MG + symmetric GS CPU",
+            solver,
+            K_reduced,
+            bReduced,
+            boundaryTemperature,
+            indexReduced,
+            setupTime
+        );
+    }
+    // ========================================================
     // Final performance comparison
     // ========================================================
 
@@ -613,7 +747,7 @@ int main(int argc, char** argv)
                  "---------------------------------------------\n";
 
     const std::vector<BenchmarkResult> results =
-        {jacobiResult, gsResult, mgJacobiResult, mgGSResult};
+        {jacobiResult, gsResult, mgJacobiResult, mgGSResult, jacobiResultCPU, gsResultCPU, mgJacobiResultCPU, mgGSResultCPU};
 
     for (const BenchmarkResult& result : results) {
         std::cout << std::left << std::setw(28) << result.name << std::right << std::setw(12)

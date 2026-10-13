@@ -297,6 +297,7 @@ int main(int argc, char **argv) {
   // --------------------------------------------------------
 
   gpuSolver::Backend* backend;
+  gpuSolver::Backend* cpuBackend = new gpuSolver::CPUBackend();
 #if defined(GPUSOLVER_USE_METAL)
 
     gpuSolver::MetalContext metalContext;
@@ -960,6 +961,7 @@ int main(int argc, char **argv) {
   polyscope::show();
 
   delete backend;
+  delete cpuBackend;
   delete[] diagonalValues;
   return 0;
 }

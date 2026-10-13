@@ -15,6 +15,7 @@
 
 #include <cmath>
 #include <stdexcept>
+#include <atomic>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -244,17 +245,8 @@ void CPUBackend::encodeGaussSeidelColor(
   const float *rhsData = CPUVec(rhs).data();
   float *solutionData = CPUVec(solution).data();
 
-  // Rows within one color are a mutually independent set in the
-  // matrix graph (that's what "a color" means), so it is safe to
-  // update them all in parallel: none of them can be reading a
-  // value another thread in this same loop is simultaneously
-  // writing. Rows read values from OTHER colors too, via
-  // rowDotExcluding below, and those are intentionally whatever the
-  // most recently written values are -- that's the Gauss-Seidel
-  // part, not a race, since a previous call to this function (for a
-  // previous color) has already fully completed before this one is
-  // invoked again (see MultigridSmoother / SymmetricGaussSeidelSmoother,
-  // which loop over colors and call this once per color).
+  std::atomic<bool> sawZeroDiagonal{false};
+
 #pragma omp parallel for
   for (std::size_t k = colorStart; k < colorStart + colorCount; ++k) {
     const int row = order[k];
@@ -262,15 +254,18 @@ void CPUBackend::encodeGaussSeidelColor(
     const float offDiagSum =
         rowDotExcluding(matrix, solutionData, row, row, row + 1, &diag);
     if (std::abs(diag) < 1e-12f) {
-      throw std::runtime_error(
-          "CPUBackend::encodeGaussSeidelColor: zero diagonal entry.");
+      sawZeroDiagonal.store(true, std::memory_order_relaxed);
+      continue;  // don't update this row; report after the region closes
     }
     const float newValue = (rhsData[row] - offDiagSum) / diag;
-    solutionData[row] =
-        (1.0f - omega) * solutionData[row] + omega * newValue;
+    solutionData[row] = (1.0f - omega) * solutionData[row] + omega * newValue;
+  }
+
+  if (sawZeroDiagonal.load(std::memory_order_relaxed)) {
+    throw std::runtime_error(
+        "CPUBackend::encodeGaussSeidelColor: zero diagonal entry.");
   }
 }
-
 void CPUBackend::encodeDot(BackendEncoder &, const DeviceVector &x,
                            const DeviceVector &y, DeviceScalar &result) {
   if (x.size() != y.size()) {

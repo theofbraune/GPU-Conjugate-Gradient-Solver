@@ -1,15 +1,15 @@
 #include "ElasticitySimulator.h"
 #include "LinearElasticity.h"
 
-#include "AMGUtils/AMGHierarchyBuilder.h"
 #include <AMGUtils/SmoothedAggregationCoarsener.h>
+#include "AMGUtils/AMGHierarchyBuilder.h"
 
-#include <Eigen/SparseCholesky>
 #include <GPUSolver/AMGHierarchy.h>
 #include <GPUSolver/BlockUtils.h>
 #include <GPUSolver/CGSolver.h>
 #include <GPUSolver/Permutation.h>
 #include <GPUSolver/ReorderingStrategies/IdentityReordering.h>
+#include <Eigen/SparseCholesky>
 
 #include <GPUSolver/Preconditioners/DampedJacobiPreconditioner.h>
 #include <GPUSolver/Preconditioners/SymmetricGaussSeidelPreconditioner.h>
@@ -38,7 +38,7 @@
 #elif defined(GPUSOLVER_USE_CUDA)
 
     #include <GPUSolver/cuda/CudaBackend.h>
-    
+
 #endif
 
 #include <igl/readMESH.h>
@@ -60,320 +60,335 @@
 
 using Clock = std::chrono::steady_clock;
 
-double elapsedMs(Clock::time_point start, Clock::time_point end) {
-  return std::chrono::duration<double, std::milli>(end - start).count();
+double elapsedMs(Clock::time_point start, Clock::time_point end)
+{
+    return std::chrono::duration<double, std::milli>(end - start).count();
 }
 
-struct BenchmarkResult {
-  std::string name;
+struct BenchmarkResult
+{
+    std::string name;
 
-  std::size_t iterations = 0;
+    std::size_t iterations = 0;
 
-  double setupMs = 0.0;
-  double solveMs = 0.0;
+    double setupMs = 0.0;
+    double solveMs = 0.0;
 
-  float trueResidual = 0.0f;
+    float trueResidual = 0.0f;
 
-  Eigen::VectorXf solution;
+    Eigen::VectorXf solution;
 };
 
-BenchmarkResult
-runBenchmark(const std::string &name, gpuSolver::CGSolver &solver,
-             const Eigen::SparseMatrix<float, Eigen::RowMajor> &A,
-             const Eigen::VectorXf &b, double setupMs) {
-  BenchmarkResult result;
+BenchmarkResult runBenchmark(
+    const std::string& name,
+    gpuSolver::CGSolver& solver,
+    const Eigen::SparseMatrix<float, Eigen::RowMajor>& A,
+    const Eigen::VectorXf& b,
+    double setupMs
+)
+{
+    BenchmarkResult result;
 
-  result.name = name;
-  result.setupMs = setupMs;
+    result.name = name;
+    result.setupMs = setupMs;
 
-  result.solution = Eigen::VectorXf::Zero(A.rows());
+    result.solution = Eigen::VectorXf::Zero(A.rows());
 
-  std::cout << "\nStarting " << name << "...\n";
+    std::cout << "\nStarting " << name << "...\n";
 
-  const Clock::time_point start = Clock::now();
+    const Clock::time_point start = Clock::now();
 
-  solver.solve(b, result.solution);
+    solver.solve(b, result.solution);
 
-  result.solveMs = elapsedMs(start, Clock::now());
+    result.solveMs = elapsedMs(start, Clock::now());
 
-  result.iterations = solver.getNbOfIterations();
+    result.iterations = solver.getNbOfIterations();
 
-  const Eigen::VectorXf trueResidual = A * result.solution - b;
+    const Eigen::VectorXf trueResidual = A * result.solution - b;
 
-  result.trueResidual = trueResidual.norm() / std::max(1.0e-20f, b.norm());
+    result.trueResidual = trueResidual.norm() / std::max(1.0e-20f, b.norm());
 
-  std::cout << name << " finished.\n"
-            << "  iterations    = " << result.iterations << "\n"
-            << "  setup         = " << result.setupMs << " ms\n"
-            << "  solve         = " << result.solveMs << " ms\n"
-            << "  true residual = " << std::scientific << result.trueResidual
-            << std::defaultfloat << "\n";
+    std::cout << name << " finished.\n"
+              << "  iterations    = " << result.iterations << "\n"
+              << "  setup         = " << result.setupMs << " ms\n"
+              << "  solve         = " << result.solveMs << " ms\n"
+              << "  true residual = " << std::scientific << result.trueResidual << std::defaultfloat
+              << "\n";
 
-  return result;
+    return result;
 }
 
 std::vector<gpuSolver::Permutation> buildIdentityPermutationsForHierarchy(
-    const gpuSolver::AMGHierarchy &hierarchy) {
-  std::vector<gpuSolver::Permutation> permutations;
+    const gpuSolver::AMGHierarchy& hierarchy
+)
+{
+    std::vector<gpuSolver::Permutation> permutations;
 
-  permutations.reserve(hierarchy.A.size());
-
-  gpuSolver::IdentityReordering idReordering;
-
-  for (std::size_t level = 0; level < hierarchy.A.size(); ++level) {
-    const gpuSolver::AMGHierarchy::Matrix &A = hierarchy.A[level];
-
-    const std::size_t nRows = static_cast<std::size_t>(A.rows());
-
-    if (A.rows() != A.cols()) {
-      throw std::runtime_error("buildRCMPermutationsForHierarchy: "
-                               "Galerkin matrix is not square.");
-    }
-
-    int *oldToNew = new int[nRows];
-
-    int *newToOld = new int[nRows];
-
-    idReordering.compute(nRows, A.outerIndexPtr(), A.innerIndexPtr(), oldToNew,
-                         newToOld);
-
-    permutations.emplace_back(nRows, oldToNew, newToOld);
-
-    delete[] oldToNew;
-    delete[] newToOld;
-  }
-
-  return permutations;
-}
-
-std::vector<gpuSolver::Permutation>
-buildBlockRCMPermutationsForHierarchy(const gpuSolver::AMGHierarchy &hierarchy,
-                                      std::size_t blockSize) {
-  std::vector<gpuSolver::Permutation> permutations;
-
-  permutations.reserve(hierarchy.A.size());
-
-  gpuSolver::RCMReordering rcm;
-
-  for (std::size_t level = 0; level < hierarchy.A.size(); ++level) {
-
-    const auto &A = hierarchy.A[level];
-
-    if (A.rows() % static_cast<int>(blockSize) != 0) {
-
-      throw std::runtime_error("AMG level does not preserve "
-                               "block structure.");
-    }
-
-    gpuSolver::BlockGraph graph = gpuSolver::buildBlockGraph(A, blockSize);
-
-    const std::size_t numberOfBlocks = graph.rowPtr.size() - 1;
-
-    int *oldToNew = new int[numberOfBlocks];
-
-    int *newToOld = new int[numberOfBlocks];
-
-    rcm.compute(numberOfBlocks, graph.rowPtr.data(), graph.colPtr.data(),
-                oldToNew, newToOld);
-
-    gpuSolver::Permutation nodePermutation(numberOfBlocks, oldToNew, newToOld);
-
-    delete[] oldToNew;
-    delete[] newToOld;
-
-    permutations.push_back(gpuSolver::expandBlockPermutation(
-        nodePermutation, numberOfBlocks, blockSize));
-  }
-
-  return permutations;
-}
-
-void compareBlockGaussSeidelPermutation(
-    gpuSolver::Backend &backend,
-    const Eigen::SparseMatrix<float, Eigen::RowMajor> &A,
-    const Eigen::VectorXf &b, const Eigen::VectorXd &reference,
-    const gpuSolver::Permutation &blockPermutation) {
-  std::cout
-      << "\n============================================================\n"
-      << "[BLOCK GS PERMUTATION TEST]\n"
-      << "============================================================\n";
-
-  // ----------------------------------------------------------
-  // 1. Identity ordering.
-  // ----------------------------------------------------------
-
-  {
-    gpuSolver::BlockGaussSeidelPreconditioner preconditioner(1.0f);
+    permutations.reserve(hierarchy.A.size());
 
     gpuSolver::IdentityReordering idReordering;
 
-    const std::size_t nRows = static_cast<std::size_t>(A.rows());
+    for (std::size_t level = 0; level < hierarchy.A.size(); ++level) {
+        const gpuSolver::AMGHierarchy::Matrix& A = hierarchy.A[level];
 
-    if (A.rows() != A.cols()) {
-      throw std::runtime_error("buildRCMPermutationsForHierarchy: "
-                               "Galerkin matrix is not square.");
+        const std::size_t nRows = static_cast<std::size_t>(A.rows());
+
+        if (A.rows() != A.cols()) {
+            throw std::runtime_error(
+                "buildRCMPermutationsForHierarchy: "
+                "Galerkin matrix is not square."
+            );
+        }
+
+        int* oldToNew = new int[nRows];
+
+        int* newToOld = new int[nRows];
+
+        idReordering.compute(nRows, A.outerIndexPtr(), A.innerIndexPtr(), oldToNew, newToOld);
+
+        permutations.emplace_back(nRows, oldToNew, newToOld);
+
+        delete[] oldToNew;
+        delete[] newToOld;
     }
 
-    int *oldToNew = new int[nRows];
-
-    int *newToOld = new int[nRows];
-
-    idReordering.compute(nRows, A.outerIndexPtr(), A.innerIndexPtr(), oldToNew,
-                         newToOld);
-
-    delete[] oldToNew;
-    delete[] newToOld;
-    gpuSolver::Permutation identity =
-        gpuSolver::Permutation(nRows, oldToNew, newToOld);
-
-    // return permutations;
-
-    gpuSolver::CGSolver solver(backend, preconditioner, A, identity);
-
-    solver.setTolerance(1.0e-4f);
-    solver.setMaxIterations(1000);
-
-    runBenchmark("Block GS - identity", solver, A, b, 0.0);
-  }
-
-  // ----------------------------------------------------------
-  // 2. Block RCM ordering.
-  // ----------------------------------------------------------
-
-  {
-    gpuSolver::BlockGaussSeidelPreconditioner preconditioner(1.0f);
-
-    gpuSolver::CGSolver solver(backend, preconditioner, A, blockPermutation);
-
-    solver.setTolerance(1.0e-4f);
-    solver.setMaxIterations(1000);
-
-    runBenchmark("Block GS - block RCM", solver, A, b, 0.0);
-  }
+    return permutations;
 }
 
-int main(int argc, char **argv) {
-  if (argc != 2) {
-    std::cerr << "Usage: cantileverSolverBenchmark beam.mesh\n";
+std::vector<gpuSolver::Permutation> buildBlockRCMPermutationsForHierarchy(
+    const gpuSolver::AMGHierarchy& hierarchy,
+    std::size_t blockSize
+)
+{
+    std::vector<gpuSolver::Permutation> permutations;
 
-    return 1;
-  }
+    permutations.reserve(hierarchy.A.size());
 
-  Eigen::MatrixXd V;
-  Eigen::MatrixXi T;
-  Eigen::MatrixXi F;
+    gpuSolver::RCMReordering rcm;
 
-  if (!igl::readMESH(argv[1], V, T, F)) {
+    for (std::size_t level = 0; level < hierarchy.A.size(); ++level) {
+        const auto& A = hierarchy.A[level];
 
-    throw std::runtime_error("Could not read tetrahedral mesh.");
-  }
+        if (A.rows() % static_cast<int>(blockSize) != 0) {
+            throw std::runtime_error(
+                "AMG level does not preserve "
+                "block structure."
+            );
+        }
 
-  std::cout << "Loaded elasticity mesh:\n"
-            << "  vertices = " << V.rows() << "\n"
-            << "  tets     = " << T.rows() << "\n";
-  constexpr double youngModulus = 1.0e5;
+        gpuSolver::BlockGraph graph = gpuSolver::buildBlockGraph(A, blockSize);
 
-  constexpr double poissonRatio = 0.35;
+        const std::size_t numberOfBlocks = graph.rowPtr.size() - 1;
 
-  const double mu = youngModulus / (2.0 * (1.0 + poissonRatio));
+        int* oldToNew = new int[numberOfBlocks];
 
-  const double lambda = youngModulus * poissonRatio /
-                        ((1.0 + poissonRatio) * (1.0 - 2.0 * poissonRatio));
+        int* newToOld = new int[numberOfBlocks];
 
-  std::cout << "Material:\n"
-            << "  E      = " << youngModulus << "\n"
-            << "  nu     = " << poissonRatio << "\n"
-            << "  lambda = " << lambda << "\n"
-            << "  mu     = " << mu << "\n";
+        rcm.compute(numberOfBlocks, graph.rowPtr.data(), graph.colPtr.data(), oldToNew, newToOld);
 
-  LinearElasticitySimulator simulator(V, F, T, lambda, mu);
+        gpuSolver::Permutation nodePermutation(numberOfBlocks, oldToNew, newToOld);
 
-  const double xMin = V.col(0).minCoeff();
+        delete[] oldToNew;
+        delete[] newToOld;
 
-  const double xMax = V.col(0).maxCoeff();
-
-  const double beamLength = xMax - xMin;
-
-  const double clampTolerance = 1.0e-4 * beamLength;
-
-  std::vector<int> pinnedVertices;
-
-  for (Eigen::Index i = 0; i < V.rows(); ++i) {
-
-    if (V(i, 0) <= xMin + clampTolerance) {
-
-      pinnedVertices.push_back(static_cast<int>(i));
+        permutations.push_back(
+            gpuSolver::expandBlockPermutation(nodePermutation, numberOfBlocks, blockSize)
+        );
     }
-  }
 
-  std::cout << "Pinned " << pinnedVertices.size() << " vertices.\n";
+    return permutations;
+}
 
-  if (pinnedVertices.empty()) {
-    throw std::runtime_error("No vertices found on clamped side.");
-  }
+void compareBlockGaussSeidelPermutation(
+    gpuSolver::Backend& backend,
+    const Eigen::SparseMatrix<float, Eigen::RowMajor>& A,
+    const Eigen::VectorXf& b,
+    const Eigen::VectorXd& reference,
+    const gpuSolver::Permutation& blockPermutation
+)
+{
+    std::cout << "\n============================================================\n"
+              << "[BLOCK GS PERMUTATION TEST]\n"
+              << "============================================================\n";
 
-  simulator.constrainSimulation(pinnedVertices);
+    // ----------------------------------------------------------
+    // 1. Identity ordering.
+    // ----------------------------------------------------------
 
-  const Eigen::SparseMatrix<double, Eigen::RowMajor> Kdouble =
-      simulator.getHessian();
+    {
+        gpuSolver::BlockGaussSeidelPreconditioner preconditioner(1.0f);
 
-  const Eigen::SparseMatrix<double, Eigen::RowMajor> Mdouble =
-      simulator.getMassMatrixStackedConstrained();
+        gpuSolver::IdentityReordering idReordering;
 
-  if (Kdouble.rows() % 3 != 0) {
-    throw std::runtime_error("Constrained elasticity system "
-                             "is not divisible into 3x3 blocks.");
-  }
+        const std::size_t nRows = static_cast<std::size_t>(A.rows());
 
-  std::cout << "Reduced elasticity system:\n"
-            << "  DOFs     = " << Kdouble.rows() << "\n"
-            << "  vertices = " << Kdouble.rows() / 3 << "\n"
-            << "  nnz      = " << Kdouble.nonZeros() << "\n";
+        if (A.rows() != A.cols()) {
+            throw std::runtime_error(
+                "buildRCMPermutationsForHierarchy: "
+                "Galerkin matrix is not square."
+            );
+        }
 
-  constexpr double density = 1.0;
+        int* oldToNew = new int[nRows];
 
-  constexpr double gravity = -9.81;
+        int* newToOld = new int[nRows];
 
-  Eigen::VectorXd gravityVector = Eigen::VectorXd::Zero(Kdouble.rows());
+        idReordering.compute(nRows, A.outerIndexPtr(), A.innerIndexPtr(), oldToNew, newToOld);
 
-  const int numberOfFreeVertices = Kdouble.rows() / 3;
+        delete[] oldToNew;
+        delete[] newToOld;
+        gpuSolver::Permutation identity = gpuSolver::Permutation(nRows, oldToNew, newToOld);
 
-  for (int i = 0; i < numberOfFreeVertices; ++i) {
+        // return permutations;
 
-    gravityVector[3 * i + 2] = gravity;
-  }
+        gpuSolver::CGSolver solver(backend, preconditioner, A, identity);
 
-  Eigen::VectorXd forceDouble = density * Mdouble * gravityVector;
+        solver.setTolerance(1.0e-4f);
+        solver.setMaxIterations(1000);
 
-  Eigen::SparseMatrix<float, Eigen::RowMajor> A = Kdouble.cast<float>();
+        runBenchmark("Block GS - identity", solver, A, b, 0.0);
+    }
 
-  A.makeCompressed();
+    // ----------------------------------------------------------
+    // 2. Block RCM ordering.
+    // ----------------------------------------------------------
 
-  Eigen::VectorXf b = forceDouble.cast<float>();
+    {
+        gpuSolver::BlockGaussSeidelPreconditioner preconditioner(1.0f);
 
-  constexpr std::size_t blockSize = 3;
+        gpuSolver::CGSolver solver(backend, preconditioner, A, blockPermutation);
 
-  gpuSolver::BlockGraph blockGraph = gpuSolver::buildBlockGraph(A, blockSize);
+        solver.setTolerance(1.0e-4f);
+        solver.setMaxIterations(1000);
 
-  const std::size_t numberOfBlocks = blockGraph.rowPtr.size() - 1;
+        runBenchmark("Block GS - block RCM", solver, A, b, 0.0);
+    }
+}
 
-  int *nodeOldToNew = new int[numberOfBlocks];
+int main(int argc, char** argv)
+{
+    if (argc != 2) {
+        std::cerr << "Usage: cantileverSolverBenchmark beam.mesh\n";
 
-  int *nodeNewToOld = new int[numberOfBlocks];
+        return 1;
+    }
 
-  gpuSolver::RCMReordering rcm;
+    Eigen::MatrixXd V;
+    Eigen::MatrixXi T;
+    Eigen::MatrixXi F;
 
-  rcm.compute(numberOfBlocks, blockGraph.rowPtr.data(),
-              blockGraph.colPtr.data(), nodeOldToNew, nodeNewToOld);
+    if (!igl::readMESH(argv[1], V, T, F)) {
+        throw std::runtime_error("Could not read tetrahedral mesh.");
+    }
 
-  gpuSolver::Permutation nodePermutation(numberOfBlocks, nodeOldToNew,
-                                         nodeNewToOld);
+    std::cout << "Loaded elasticity mesh:\n"
+              << "  vertices = " << V.rows() << "\n"
+              << "  tets     = " << T.rows() << "\n";
+    constexpr double youngModulus = 1.0e5;
 
-  delete[] nodeOldToNew;
-  delete[] nodeNewToOld;
+    constexpr double poissonRatio = 0.35;
 
-  gpuSolver::Permutation dofPermutation = gpuSolver::expandBlockPermutation(
-      nodePermutation, numberOfBlocks, blockSize);
+    const double mu = youngModulus / (2.0 * (1.0 + poissonRatio));
+
+    const double lambda =
+        youngModulus * poissonRatio / ((1.0 + poissonRatio) * (1.0 - 2.0 * poissonRatio));
+
+    std::cout << "Material:\n"
+              << "  E      = " << youngModulus << "\n"
+              << "  nu     = " << poissonRatio << "\n"
+              << "  lambda = " << lambda << "\n"
+              << "  mu     = " << mu << "\n";
+
+    LinearElasticitySimulator simulator(V, F, T, lambda, mu);
+
+    const double xMin = V.col(0).minCoeff();
+
+    const double xMax = V.col(0).maxCoeff();
+
+    const double beamLength = xMax - xMin;
+
+    const double clampTolerance = 1.0e-4 * beamLength;
+
+    std::vector<int> pinnedVertices;
+
+    for (Eigen::Index i = 0; i < V.rows(); ++i) {
+        if (V(i, 0) <= xMin + clampTolerance) {
+            pinnedVertices.push_back(static_cast<int>(i));
+        }
+    }
+
+    std::cout << "Pinned " << pinnedVertices.size() << " vertices.\n";
+
+    if (pinnedVertices.empty()) {
+        throw std::runtime_error("No vertices found on clamped side.");
+    }
+
+    simulator.constrainSimulation(pinnedVertices);
+
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> Kdouble = simulator.getHessian();
+
+    const Eigen::SparseMatrix<double, Eigen::RowMajor> Mdouble =
+        simulator.getMassMatrixStackedConstrained();
+
+    if (Kdouble.rows() % 3 != 0) {
+        throw std::runtime_error(
+            "Constrained elasticity system "
+            "is not divisible into 3x3 blocks."
+        );
+    }
+
+    std::cout << "Reduced elasticity system:\n"
+              << "  DOFs     = " << Kdouble.rows() << "\n"
+              << "  vertices = " << Kdouble.rows() / 3 << "\n"
+              << "  nnz      = " << Kdouble.nonZeros() << "\n";
+
+    constexpr double density = 1.0;
+
+    constexpr double gravity = -9.81;
+
+    Eigen::VectorXd gravityVector = Eigen::VectorXd::Zero(Kdouble.rows());
+
+    const int numberOfFreeVertices = Kdouble.rows() / 3;
+
+    for (int i = 0; i < numberOfFreeVertices; ++i) {
+        gravityVector[3 * i + 2] = gravity;
+    }
+
+    Eigen::VectorXd forceDouble = density * Mdouble * gravityVector;
+
+    Eigen::SparseMatrix<float, Eigen::RowMajor> A = Kdouble.cast<float>();
+
+    A.makeCompressed();
+
+    Eigen::VectorXf b = forceDouble.cast<float>();
+
+    constexpr std::size_t blockSize = 3;
+
+    gpuSolver::BlockGraph blockGraph = gpuSolver::buildBlockGraph(A, blockSize);
+
+    const std::size_t numberOfBlocks = blockGraph.rowPtr.size() - 1;
+
+    int* nodeOldToNew = new int[numberOfBlocks];
+
+    int* nodeNewToOld = new int[numberOfBlocks];
+
+    gpuSolver::RCMReordering rcm;
+
+    rcm.compute(
+        numberOfBlocks,
+        blockGraph.rowPtr.data(),
+        blockGraph.colPtr.data(),
+        nodeOldToNew,
+        nodeNewToOld
+    );
+
+    gpuSolver::Permutation nodePermutation(numberOfBlocks, nodeOldToNew, nodeNewToOld);
+
+    delete[] nodeOldToNew;
+    delete[] nodeNewToOld;
+
+    gpuSolver::Permutation dofPermutation =
+        gpuSolver::expandBlockPermutation(nodePermutation, numberOfBlocks, blockSize);
 
     gpuSolver::Backend* backend;
 #if defined(GPUSOLVER_USE_METAL)
@@ -389,293 +404,475 @@ int main(int argc, char **argv) {
 
 #endif
 
-  constexpr float tolerance = 1.0e-4f;
+    gpuSolver::CPUBackend cpuBackend_impl;
+    gpuSolver::Backend* cpuBackend = &cpuBackend_impl;
+    constexpr float tolerance = 1.0e-4f;
 
-  constexpr std::size_t maxIterations = 1000;
+    constexpr std::size_t maxIterations = 1000;
 
-  gpuSolver::SmoothedAggregationCoarsener coarsener(3, 0.1f);
+    gpuSolver::SmoothedAggregationCoarsener coarsener(3, 0.1f);
 
-  gpuSolver::AMGHierarchyBuilder builder(coarsener, 10, 5000);
+    gpuSolver::AMGHierarchyBuilder builder(coarsener, 10, 5000);
 
-  gpuSolver::AMGHierarchy hierarchy = builder.build(A);
+    gpuSolver::AMGHierarchy hierarchy = builder.build(A);
 
-  // gpuSolver::AMGHierarchy hierarchy =
-  //     MGBuilder::buildAmgclBlockSmoothedAggregationHierarchy(A, 3);
-  for (auto A : hierarchy.A) {
-    std::cout << " the size of the matrix is " << A.rows() << " x " << A.cols()
-              << std::endl;
-  }
+    // gpuSolver::AMGHierarchy hierarchy =
+    //     MGBuilder::buildAmgclBlockSmoothedAggregationHierarchy(A, 3);
+    for (auto A : hierarchy.A) {
+        std::cout << " the size of the matrix is " << A.rows() << " x " << A.cols() << std::endl;
+    }
 
-  std::vector<gpuSolver::Permutation> mgPermutations =
-      buildBlockRCMPermutationsForHierarchy(hierarchy, 3);
-  BenchmarkResult scalarJacobi;
+    std::vector<gpuSolver::Permutation> mgPermutations =
+        buildBlockRCMPermutationsForHierarchy(hierarchy, 3);
+    BenchmarkResult scalarJacobi;
 
-  {
-    const Clock::time_point start = Clock::now();
+    {
+        const Clock::time_point start = Clock::now();
 
-    gpuSolver::DampedJacobiPreconditioner preconditioner(4, 0.9f);
+        gpuSolver::DampedJacobiPreconditioner preconditioner(4, 0.9f);
 
-    gpuSolver::CGSolver solver(*backend, preconditioner, A, dofPermutation);
+        gpuSolver::CGSolver solver(*backend, preconditioner, A, dofPermutation);
 
-    solver.setTolerance(tolerance);
+        solver.setTolerance(tolerance);
 
-    solver.setMaxIterations(maxIterations);
+        solver.setMaxIterations(maxIterations);
 
-    const double setupMs = elapsedMs(start, Clock::now());
+        const double setupMs = elapsedMs(start, Clock::now());
 
-    scalarJacobi = runBenchmark("Scalar Jacobi", solver, A, b, setupMs);
-  }
+        scalarJacobi = runBenchmark("Scalar Jacobi", solver, A, b, setupMs);
+    }
 
-  BenchmarkResult scalarGS;
+    BenchmarkResult scalarGS;
 
-  {
-    const Clock::time_point start = Clock::now();
+    {
+        const Clock::time_point start = Clock::now();
 
-    gpuSolver::SymmetricGaussSeidelPreconditioner preconditioner(1.0f);
+        gpuSolver::SymmetricGaussSeidelPreconditioner preconditioner(1.0f);
 
-    gpuSolver::CGSolver solver(*backend, preconditioner, A, dofPermutation);
+        gpuSolver::CGSolver solver(*backend, preconditioner, A, dofPermutation);
 
-    solver.setTolerance(tolerance);
+        solver.setTolerance(tolerance);
 
-    solver.setMaxIterations(maxIterations);
+        solver.setMaxIterations(maxIterations);
 
-    const double setupMs = elapsedMs(start, Clock::now());
+        const double setupMs = elapsedMs(start, Clock::now());
 
-    scalarGS = runBenchmark("Scalar symmetric GS", solver, A, b, setupMs);
-  }
+        scalarGS = runBenchmark("Scalar symmetric GS", solver, A, b, setupMs);
+    }
 
-  std::vector<gpuSolver::Permutation> idPerm =
-      buildIdentityPermutationsForHierarchy(hierarchy);
+    std::vector<gpuSolver::Permutation> idPerm = buildIdentityPermutationsForHierarchy(hierarchy);
 
-  BenchmarkResult blockJacobi;
+    BenchmarkResult blockJacobi;
 
-  {
-    const Clock::time_point start = Clock::now();
+    {
+        const Clock::time_point start = Clock::now();
 
-    gpuSolver::BlockJacobiPreconditioner preconditioner(4, 0.9f);
+        gpuSolver::BlockJacobiPreconditioner preconditioner(4, 0.9f);
 
-    gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
+        gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
 
-    solver.setTolerance(tolerance);
+        solver.setTolerance(tolerance);
 
-    solver.setMaxIterations(maxIterations);
+        solver.setMaxIterations(maxIterations);
 
-    const double setupMs = elapsedMs(start, Clock::now());
+        const double setupMs = elapsedMs(start, Clock::now());
 
-    blockJacobi = runBenchmark("3x3 block Jacobi", solver, A, b, setupMs);
-  }
+        blockJacobi = runBenchmark("3x3 block Jacobi", solver, A, b, setupMs);
+    }
 
-  /*
-  BenchmarkResult blockGS;
+    /*
+    BenchmarkResult blockGS;
 
-  {
-    const Clock::time_point start = Clock::now();
+    {
+      const Clock::time_point start = Clock::now();
 
-    gpuSolver::BlockGaussSeidelPreconditioner preconditioner(1.0f);
+      gpuSolver::BlockGaussSeidelPreconditioner preconditioner(1.0f);
 
-    gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
+      gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
 
-    solver.setTolerance(tolerance);
+      solver.setTolerance(tolerance);
 
-    solver.setMaxIterations(maxIterations);
+      solver.setMaxIterations(maxIterations);
 
-    const double setupMs = elapsedMs(start, Clock::now());
+      const double setupMs = elapsedMs(start, Clock::now());
 
-    blockGS = runBenchmark("3x3 block symmetric GS", solver, A, b, setupMs);
-  }
+      blockGS = runBenchmark("3x3 block symmetric GS", solver, A, b, setupMs);
+    }
 
-  */
+    */
 
-  const Clock::time_point hierarchyStart = Clock::now();
+    const Clock::time_point hierarchyStart = Clock::now();
 
-  const double hierarchyMs = elapsedMs(hierarchyStart, Clock::now());
+    const double hierarchyMs = elapsedMs(hierarchyStart, Clock::now());
 
-  BenchmarkResult mgScalarJacobi;
+    BenchmarkResult mgScalarJacobi;
 
-  {
-    const Clock::time_point start = Clock::now();
+    {
+        const Clock::time_point start = Clock::now();
 
-    gpuSolver::MultigridDampedJacobiPreconditioner preconditioner(
-        *backend, hierarchy, idPerm, 2, 2, 1, 0.7f);
+        gpuSolver::MultigridDampedJacobiPreconditioner
+            preconditioner(*backend, hierarchy, idPerm, 2, 2, 1, 0.7f);
 
-    gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
+        gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
 
-    solver.setTolerance(tolerance);
-    solver.setMaxIterations(maxIterations);
+        solver.setTolerance(tolerance);
+        solver.setMaxIterations(maxIterations);
 
-    const double setupMs = elapsedMs(start, Clock::now());
+        const double setupMs = elapsedMs(start, Clock::now());
 
-    mgScalarJacobi = runBenchmark("MG + scalar Jacobi", solver, A, b, setupMs);
-  }
-  /**/
+        mgScalarJacobi = runBenchmark("MG + scalar Jacobi", solver, A, b, setupMs);
+    }
+    /**/
 
-  BenchmarkResult mgBlockJacobi;
+    BenchmarkResult mgBlockJacobi;
 
-  {
-    const Clock::time_point start = Clock::now();
+    {
+        const Clock::time_point start = Clock::now();
 
-    gpuSolver::MultigridBlockJacobiPreconditioner preconditioner(
-        *backend, hierarchy, mgPermutations, 2, 2, 4, 0.4f, 1);
-    // gpuSolver::MultigridBlockJacobiPreconditioner preconditioner(
-    //     backend, hierarchy, mgPermutations, 2, 2, 1, 0.7f);
+        gpuSolver::MultigridBlockJacobiPreconditioner
+            preconditioner(*backend, hierarchy, mgPermutations, 2, 2, 4, 0.4f, 1);
+        // gpuSolver::MultigridBlockJacobiPreconditioner preconditioner(
+        //     backend, hierarchy, mgPermutations, 2, 2, 1, 0.7f);
 
-    gpuSolver::CGSolver solver(*backend, preconditioner, A, mgPermutations[0]);
+        gpuSolver::CGSolver solver(*backend, preconditioner, A, mgPermutations[0]);
 
-    solver.setTolerance(tolerance);
-    solver.setMaxIterations(maxIterations);
+        solver.setTolerance(tolerance);
+        solver.setMaxIterations(maxIterations);
 
-    const double setupMs = elapsedMs(start, Clock::now());
+        const double setupMs = elapsedMs(start, Clock::now());
 
-    mgBlockJacobi =
-        runBenchmark("MG + 3x3 block Jacobi", solver, A, b, setupMs);
-  }
-  /*
+        mgBlockJacobi = runBenchmark("MG + 3x3 block Jacobi", solver, A, b, setupMs);
+    }
+    /*
 
-  BenchmarkResult mgSGS;
+    BenchmarkResult mgSGS;
 
-  {
-    const Clock::time_point start = Clock::now();
+    {
+      const Clock::time_point start = Clock::now();
 
-    gpuSolver::MultigridGaussSeidelPreconditioner preconditioner(
-        *backend, hierarchy, idPerm, 1, 1, 0, 0.7f);
+      gpuSolver::MultigridGaussSeidelPreconditioner preconditioner(
+          *backend, hierarchy, idPerm, 1, 1, 0, 0.7f);
 
-    gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
+      gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
 
-    solver.setTolerance(tolerance);
-    solver.setMaxIterations(maxIterations);
+      solver.setTolerance(tolerance);
+      solver.setMaxIterations(maxIterations);
 
-    const double setupMs = elapsedMs(start, Clock::now());
+      const double setupMs = elapsedMs(start, Clock::now());
 
-    mgSGS = runBenchmark("MG + gauss seidel", solver, A, b, setupMs);
-  }
+      mgSGS = runBenchmark("MG + gauss seidel", solver, A, b, setupMs);
+    }
 
-  
-  BenchmarkResult mgBlockSGS;
 
-  {
-    const Clock::time_point start = Clock::now();
+    BenchmarkResult mgBlockSGS;
 
-    gpuSolver::MultigridBlockGaussSeidelPreconditioner preconditioner(
-        *backend, hierarchy, idPerm, 1, 1, 0, 0.7f);
+    {
+      const Clock::time_point start = Clock::now();
 
-    gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
+      gpuSolver::MultigridBlockGaussSeidelPreconditioner preconditioner(
+          *backend, hierarchy, idPerm, 1, 1, 0, 0.7f);
 
-    solver.setTolerance(tolerance);
-    solver.setMaxIterations(maxIterations);
+      gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
 
-    const double setupMs = elapsedMs(start, Clock::now());
+      solver.setTolerance(tolerance);
+      solver.setMaxIterations(maxIterations);
 
-    mgBlockSGS = runBenchmark("MG + block gauss seidel", solver, A, b, setupMs);
-  }
+      const double setupMs = elapsedMs(start, Clock::now());
 
-  BenchmarkResult mgBlockHybrid;
-  {
-    const Clock::time_point start = Clock::now();
+      mgBlockSGS = runBenchmark("MG + block gauss seidel", solver, A, b, setupMs);
+    }
 
-    gpuSolver::MultigridHybridBlockPreconditioner preconditioner(
-        *backend, hierarchy, idPerm, 2, 1, 0, 0.7f);
+    BenchmarkResult mgBlockHybrid;
+    {
+      const Clock::time_point start = Clock::now();
 
-    gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
+      gpuSolver::MultigridHybridBlockPreconditioner preconditioner(
+          *backend, hierarchy, idPerm, 2, 1, 0, 0.7f);
 
-    solver.setTolerance(tolerance);
-    solver.setMaxIterations(maxIterations);
+      gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
 
-    const double setupMs = elapsedMs(start, Clock::now());
+      solver.setTolerance(tolerance);
+      solver.setMaxIterations(maxIterations);
 
-    mgBlockHybrid = runBenchmark("MG + block gauss seidel fine + block jacobi coarse", solver, A, b, setupMs);
-  }
-  */
+      const double setupMs = elapsedMs(start, Clock::now());
 
-  /*
-  std::vector<BenchmarkResult> results = {
-      scalarJacobi,   scalarGS,   blockJacobi,   blockGS,
-      mgScalarJacobi, mgSGS};
+      mgBlockHybrid = runBenchmark("MG + block gauss seidel fine + block jacobi coarse", solver, A,
+    b, setupMs);
+    }
+    */
 
-  std::cout << "\n"
-            << "==============================================================="
-               "================================\n"
-            << "                         LINEAR ELASTICITY SOLVER BENCHMARK\n"
-            << "==============================================================="
-               "================================\n";
+    BenchmarkResult scalarJacobiCPU;
 
-  std::cout << std::left << std::setw(30) << "Preconditioner" << std::right
-            << std::setw(12) << "Iterations" << std::setw(15) << "Setup (ms)"
-            << std::setw(15) << "Solve (ms)" << std::setw(15) << "Total (ms)"
-            << std::setw(18) << "True residual"
-            << "\n";
+    {
+        const Clock::time_point start = Clock::now();
 
-  for (const BenchmarkResult &result : results) {
+        gpuSolver::DampedJacobiPreconditioner preconditioner(4, 0.9f);
 
-    std::cout << std::left << std::setw(30) << result.name
+        gpuSolver::CGSolver solver(*cpuBackend, preconditioner, A, dofPermutation);
 
-              << std::right << std::setw(12) << result.iterations
+        solver.setTolerance(tolerance);
 
-              << std::fixed << std::setprecision(3)
+        solver.setMaxIterations(maxIterations);
 
-              << std::setw(15) << result.setupMs
+        const double setupMs = elapsedMs(start, Clock::now());
 
-              << std::setw(15) << result.solveMs
+        scalarJacobiCPU = runBenchmark("Scalar Jacobi CPU", solver, A, b, setupMs);
+    }
 
-              << std::setw(15) << result.setupMs + result.solveMs
+    BenchmarkResult scalarGSCPU;
 
-              << std::scientific << std::setprecision(5)
+    {
+        const Clock::time_point start = Clock::now();
 
-              << std::setw(18) << result.trueResidual
+        gpuSolver::SymmetricGaussSeidelPreconditioner preconditioner(1.0f);
 
-              << std::defaultfloat << "\n";
-  }
+        gpuSolver::CGSolver solver(*cpuBackend, preconditioner, A, dofPermutation);
 
-  std::cout << "==============================================================="
-               "================================\n";
+        solver.setTolerance(tolerance);
 
-  std::cout << "AMG hierarchy construction = " << hierarchyMs << " ms\n";
-  */
-  // Eigen::VectorXd constrainedSolution =
-  // mgBlockJacobi.solution.cast<double>();
-  Eigen::VectorXd constrainedSolution = scalarGS.solution.cast<double>();
-  // Eigen::SimplicialLDLT<Eigen::SparseMatrix<double, Eigen::RowMajor>>
-  // lltA(Kdouble);
+        solver.setMaxIterations(maxIterations);
 
-  // Eigen::VectorXd constrainedSolution = lltA.solve(forceDouble);
+        const double setupMs = elapsedMs(start, Clock::now());
 
-  Eigen::VectorXd fullSolution =
-      simulator.liftConstrainedToFull(constrainedSolution);
+        scalarGSCPU = runBenchmark("Scalar symmetric GS CPU", solver, A, b, setupMs);
+    }
 
-  Eigen::MatrixXd U = Eigen::MatrixXd::Zero(V.rows(), 3);
+    // std::vector<gpuSolver::Permutation> idPerm =
+    // buildIdentityPermutationsForHierarchy(hierarchy);
 
-  for (Eigen::Index i = 0; i < V.rows(); ++i) {
+    BenchmarkResult blockJacobiCPU;
 
-    U.row(i) = fullSolution.segment<3>(3 * i).transpose();
-  }
+    {
+        const Clock::time_point start = Clock::now();
 
-  const double maxDisp = U.rowwise().norm().maxCoeff();
+        gpuSolver::BlockJacobiPreconditioner preconditioner(4, 0.9f);
 
-  const double bboxDiagonal =
-      (V.colwise().maxCoeff() - V.colwise().minCoeff()).norm();
+        gpuSolver::CGSolver solver(*cpuBackend, preconditioner, A, idPerm[0]);
 
-  double visualizationScale = 1.0;
+        solver.setTolerance(tolerance);
 
-  if (maxDisp > 0.0) {
-    visualizationScale = 0.15 * bboxDiagonal / maxDisp;
-  }
+        solver.setMaxIterations(maxIterations);
 
-  Eigen::MatrixXd Vdeformed = V + visualizationScale * U;
-  polyscope::init();
+        const double setupMs = elapsedMs(start, Clock::now());
 
-  polyscope::registerTetMesh("Rest shape", V, T);
+        blockJacobiCPU = runBenchmark("3x3 block Jacobi CPU", solver, A, b, setupMs);
+    }
 
-  polyscope::VolumeMesh *deformed =
-      polyscope::registerTetMesh("Deformed shape", Vdeformed, T);
 
-  Eigen::VectorXd displacementMagnitude = U.rowwise().norm();
+    // BenchmarkResult blockGSCPU;
+    //
+    // {
+    //     const Clock::time_point start = Clock::now();
+    //
+    //     gpuSolver::BlockGaussSeidelPreconditioner preconditioner(1.0f);
+    //
+    //     gpuSolver::CGSolver solver(*cpuBackend, preconditioner, A, idPerm[0]);
+    //
+    //     solver.setTolerance(tolerance);
+    //
+    //     solver.setMaxIterations(maxIterations);
+    //
+    //     const double setupMs = elapsedMs(start, Clock::now());
+    //
+    //     blockGSCPU = runBenchmark("3x3 block symmetric GS CPU", solver, A, b, setupMs);
+    // }
 
-  deformed
-      ->addVertexScalarQuantity("Displacement magnitude", displacementMagnitude)
-      ->setEnabled(true);
 
-  polyscope::show();
+    BenchmarkResult mgScalarJacobiCPU;
 
-  delete backend;
+    {
+        const Clock::time_point start = Clock::now();
 
-  return 0;
+        gpuSolver::MultigridDampedJacobiPreconditioner
+            preconditioner(*cpuBackend, hierarchy, idPerm, 2, 2, 1, 0.7f);
+
+        gpuSolver::CGSolver solver(*cpuBackend, preconditioner, A, idPerm[0]);
+
+        solver.setTolerance(tolerance);
+        solver.setMaxIterations(maxIterations);
+
+        const double setupMs = elapsedMs(start, Clock::now());
+
+        mgScalarJacobiCPU = runBenchmark("MG + scalar Jacobi CPU", solver, A, b, setupMs);
+    }
+    /**/
+
+    BenchmarkResult mgBlockJacobiCPU;
+
+    {
+        const Clock::time_point start = Clock::now();
+
+        gpuSolver::MultigridBlockJacobiPreconditioner
+            preconditioner(*cpuBackend, hierarchy, mgPermutations, 2, 2, 4, 0.4f, 1);
+        // gpuSolver::MultigridBlockJacobiPreconditioner preconditioner(
+        //     backend, hierarchy, mgPermutations, 2, 2, 1, 0.7f);
+
+        gpuSolver::CGSolver solver(*cpuBackend, preconditioner, A, mgPermutations[0]);
+
+        solver.setTolerance(tolerance);
+        solver.setMaxIterations(maxIterations);
+
+        const double setupMs = elapsedMs(start, Clock::now());
+
+        mgBlockJacobiCPU = runBenchmark("MG + 3x3 block Jacobi CPU", solver, A, b, setupMs);
+    }
+
+
+    // BenchmarkResult mgSGSCPU;
+    //
+    // {
+    //     const Clock::time_point start = Clock::now();
+    //
+    //     gpuSolver::MultigridGaussSeidelPreconditioner
+    //         preconditioner(*cpuBackend, hierarchy, idPerm, 1, 1, 0, 0.7f);
+    //
+    //     gpuSolver::CGSolver solver(*cpuBackend, preconditioner, A, idPerm[0]);
+    //
+    //     solver.setTolerance(tolerance);
+    //     solver.setMaxIterations(maxIterations);
+    //
+    //     const double setupMs = elapsedMs(start, Clock::now());
+    //
+    //     mgSGSCPU = runBenchmark("MG + gauss seidel CPU", solver, A, b, setupMs);
+    // }
+
+
+    BenchmarkResult mgBlockSGSCPU;
+
+    {
+        const Clock::time_point start = Clock::now();
+
+        gpuSolver::MultigridBlockGaussSeidelPreconditioner
+            preconditioner(*cpuBackend, hierarchy, idPerm, 1, 1, 0, 0.7f);
+
+        gpuSolver::CGSolver solver(*cpuBackend, preconditioner, A, idPerm[0]);
+
+        solver.setTolerance(tolerance);
+        solver.setMaxIterations(maxIterations);
+
+        const double setupMs = elapsedMs(start, Clock::now());
+
+        mgBlockSGSCPU = runBenchmark("MG + block gauss seidel CPU", solver, A, b, setupMs);
+    }
+
+    BenchmarkResult mgBlockHybridCPU;
+    {
+        const Clock::time_point start = Clock::now();
+
+        gpuSolver::MultigridHybridBlockPreconditioner
+            preconditioner(*cpuBackend, hierarchy, idPerm, 2, 1, 0, 0.7f);
+
+        gpuSolver::CGSolver solver(*cpuBackend, preconditioner, A, idPerm[0]);
+
+        solver.setTolerance(tolerance);
+        solver.setMaxIterations(maxIterations);
+
+        const double setupMs = elapsedMs(start, Clock::now());
+
+        mgBlockHybridCPU = runBenchmark(
+            "MG + block gauss seidel fine + block jacobi coarse CPU",
+            solver,
+            A,
+            b,
+            setupMs
+        );
+    }
+    /**/
+
+    std::vector<BenchmarkResult> results = {
+        scalarJacobi,
+        scalarJacobiCPU,
+        scalarGS,
+        scalarGSCPU,
+        blockJacobi,
+        blockJacobiCPU,
+        mgScalarJacobi,
+        mgScalarJacobiCPU,
+        mgBlockJacobi,
+        mgBlockJacobiCPU,
+        // mgSGSCPU,
+        mgBlockHybridCPU,
+        mgBlockSGSCPU
+    };
+
+    std::cout << "\n"
+              << "==============================================================="
+                 "================================\n"
+              << "                         LINEAR ELASTICITY SOLVER BENCHMARK\n"
+              << "==============================================================="
+                 "================================\n";
+
+    std::cout << std::left << std::setw(30) << "Preconditioner" << std::right << std::setw(12)
+              << "Iterations" << std::setw(15) << "Setup (ms)" << std::setw(15) << "Solve (ms)"
+              << std::setw(15) << "Total (ms)" << std::setw(18) << "True residual"
+              << "\n";
+
+    for (const BenchmarkResult& result : results) {
+        std::cout << std::left << std::setw(30) << result.name
+
+                  << std::right << std::setw(12) << result.iterations
+
+                  << std::fixed << std::setprecision(3)
+
+                  << std::setw(15) << result.setupMs
+
+                  << std::setw(15) << result.solveMs
+
+                  << std::setw(15) << result.setupMs + result.solveMs
+
+                  << std::scientific << std::setprecision(5)
+
+                  << std::setw(18) << result.trueResidual
+
+                  << std::defaultfloat << "\n";
+    }
+
+    std::cout << "==============================================================="
+                 "================================\n";
+
+    std::cout << "AMG hierarchy construction = " << hierarchyMs << " ms\n";
+    /**/
+    // Eigen::VectorXd constrainedSolution =
+    // mgBlockJacobi.solution.cast<double>();
+    Eigen::VectorXd constrainedSolution = scalarGS.solution.cast<double>();
+    // Eigen::SimplicialLDLT<Eigen::SparseMatrix<double, Eigen::RowMajor>>
+    // lltA(Kdouble);
+
+    // Eigen::VectorXd constrainedSolution = lltA.solve(forceDouble);
+
+    Eigen::VectorXd fullSolution = simulator.liftConstrainedToFull(constrainedSolution);
+
+    Eigen::MatrixXd U = Eigen::MatrixXd::Zero(V.rows(), 3);
+
+    for (Eigen::Index i = 0; i < V.rows(); ++i) {
+        U.row(i) = fullSolution.segment<3>(3 * i).transpose();
+    }
+
+    const double maxDisp = U.rowwise().norm().maxCoeff();
+
+    const double bboxDiagonal = (V.colwise().maxCoeff() - V.colwise().minCoeff()).norm();
+
+    double visualizationScale = 1.0;
+
+    if (maxDisp > 0.0) {
+        visualizationScale = 0.15 * bboxDiagonal / maxDisp;
+    }
+
+    Eigen::MatrixXd Vdeformed = V + visualizationScale * U;
+    polyscope::init();
+
+    polyscope::registerTetMesh("Rest shape", V, T);
+
+    polyscope::VolumeMesh* deformed = polyscope::registerTetMesh("Deformed shape", Vdeformed, T);
+
+    Eigen::VectorXd displacementMagnitude = U.rowwise().norm();
+
+    deformed->addVertexScalarQuantity("Displacement magnitude", displacementMagnitude)
+        ->setEnabled(true);
+
+    polyscope::show();
+
+    delete backend;
+
+    return 0;
 }
