@@ -13,9 +13,9 @@ public:
   DeviceIndexVector(const DeviceIndexVector &) = delete;
   DeviceIndexVector &operator=(const DeviceIndexVector &) = delete;
 
-  virtual size_t size() const = 0;
+  virtual std::size_t size() const = 0;
 
-  virtual size_t size() = 0;
+  virtual std::size_t size() = 0;
 
   virtual void updateValues(const int *values, const size_t sizeOfValues) = 0;
 

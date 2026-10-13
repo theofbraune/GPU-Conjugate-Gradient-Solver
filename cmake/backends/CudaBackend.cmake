@@ -29,8 +29,14 @@ add_library(
     src/cuda/CudaBackend.cc
     src/cuda/CudaEncoder.cc 
     src/cuda/CudaDeviceVector.cc
+    src/cuda/CudaDeviceIndexVector.cc
+    src/cuda/CudaDeviceCSRMatrix.cc
+    src/cuda/CudaDeviceScalar.cc
     kernels/cuda/CudaSmokeTest.cu
     kernels/cuda/VectorKernels.cu
+    kernels/cuda/GaussSeidelKernels.cu
+    kernels/cuda/ScalarKernels.cu
+    kernels/cuda/BlockKernels.cu
 )
 
 target_include_directories(
@@ -44,6 +50,8 @@ target_link_libraries(
     PUBLIC
         gpuSolverCore
         CUDA::cudart
+        CUDA::cusparse
+        CUDA::cublas
 )
 
 set_target_properties(

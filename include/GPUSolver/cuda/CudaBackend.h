@@ -1,6 +1,8 @@
 #pragma once
 
 #include <GPUSolver/Backend.h>
+#include <cusparse.h>
+#include <cublas_v2.h>
 #include <cstddef>
 #include <vector>
 
@@ -8,6 +10,10 @@ namespace gpuSolver {
 
 class CudaBackend : public Backend
 {
+private:
+    cusparseHandle_t cusparseHandle_;
+    cublasHandle_t cublasHandle_;
+
 public:
     CudaBackend();
 
@@ -108,6 +114,7 @@ public:
     ) override;
 
     void encodeScalarSet(BackendEncoder& encoder, float value, DeviceScalar& output) override;
+
     void encodeScalarCopy(
         BackendEncoder& encoder,
         const DeviceScalar& input,

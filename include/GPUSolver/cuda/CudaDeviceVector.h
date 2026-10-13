@@ -1,6 +1,7 @@
 #pragma once
 
 #include <GPUSolver/DeviceVector.h>
+#include <cusparse.h>
 
 #include <cstddef>
 #include <vector>
@@ -38,11 +39,13 @@ public:
 
   const float *data() const;
 
+  cusparseDnVecDescr_t descriptor() const;
 private:
   float *data_;
   std::size_t size_;
 
   mutable std::vector<float> hostBuffer_;
+  cusparseDnVecDescr_t descriptor_;
 };
 
 } // namespace gpuSolver

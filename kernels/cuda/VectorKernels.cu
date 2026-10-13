@@ -51,12 +51,42 @@ __global__ void axpyKernel(float* y, const float* x, float alpha, std::size_t si
   }
 }
 
+__global__ void scaleVectorByVector(const float* scaleVec, float* output, std::size_t size){
+
+  const std::size_t i = static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+
+  if(i<size){
+    output[i] = output[i] * scaleVec[i];
+  }
+}
 }
 
 
 
 namespace gpuSolver {
 namespace cuda {
+
+
+
+void launchScaleVector(
+    const float *scaleVector,
+    float *output,
+    std::size_t size,
+    cudaStream_t stream)
+{
+  scaleVectorByVector<<<
+      numberOfBlocks(size),
+      threadsPerBlock,
+      0,
+      stream>>>(
+          scaleVector,
+          output,
+          size);
+
+  check(
+      cudaGetLastError(),
+      "copyKernel launch failed");
+}
 
 void launchCopy(
     const float *source,

@@ -31,5 +31,10 @@ void launchAxpy(
     std::size_t size,
     cudaStream_t stream);
 
+void launchScaleVector(
+    const float *scaleVector,
+    float *output,
+    std::size_t size,
+    cudaStream_t stream);
 } // namespace cuda
 } // namespace gpuSolver
