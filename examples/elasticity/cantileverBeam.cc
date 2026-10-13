@@ -28,6 +28,8 @@
 #include <GPUSolver/Backend.h>
 #include <GPUSolver/BackendEncoder.h>
 
+#include <GPUSolver/CPU/CPUBackend.h>
+
 #if defined(GPUSOLVER_USE_METAL)
 
     #include <GPUSolver/metal/MetalBackend.h>
@@ -36,11 +38,7 @@
 #elif defined(GPUSOLVER_USE_CUDA)
 
     #include <GPUSolver/cuda/CudaBackend.h>
-
-#else
-
-    #error "No GPU backend selected"
-
+    
 #endif
 
 #include <igl/readMESH.h>

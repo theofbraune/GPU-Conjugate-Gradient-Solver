@@ -345,6 +345,6 @@ target_compile_definitions(
 )
 
 set(
-    GPUSOLVER_BACKEND_TARGET
+    GPUSOLVER_GPU_BACKEND_TARGET
     gpuSolverMetal
 )

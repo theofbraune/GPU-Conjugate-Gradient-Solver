@@ -5,6 +5,7 @@
 #include <GPUSolver/Preconditioners/DampedJacobiPreconditioner.h>
 #include <GPUSolver/Preconditioners/JacobiPreconditioner.h>
 #include <GPUSolver/ReorderingStrategies/RCMReordering.h>
+#include <GPUSolver/CPU/CPUBackend.h>
 
 
 #if defined(GPUSOLVER_USE_METAL)
@@ -16,9 +17,6 @@
 
     #include <GPUSolver/cuda/CudaBackend.h>
 
-#else
-
-    #error "No GPU backend selected"
 
 #endif
 

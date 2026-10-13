@@ -149,67 +149,57 @@ set_target_properties(
 # ------------------------------------------------------------
 # Backend selection
 # ------------------------------------------------------------
+# CPU is always built, so any GPU backend can be benchmarked
+# directly against it in the same binary. GPUSOLVER_BACKEND now only
+# controls which *additional* GPU backend (if any) gets built.
 
 include(CheckLanguage)
 
 if(GPUSOLVER_BACKEND STREQUAL "AUTO")
 
     if(APPLE)
-
-        set(GPUSOLVER_SELECTED_BACKEND "METAL")
-
+        set(GPUSOLVER_SELECTED_GPU_BACKEND "METAL")
+        message("pick the metal backend")
     else()
-
         check_language(CUDA)
-
         if(CMAKE_CUDA_COMPILER)
-            message(" select cuda backend")
-
-            set(GPUSOLVER_SELECTED_BACKEND "CUDA")
-
+            set(GPUSOLVER_SELECTED_GPU_BACKEND "CUDA")
         else()
-
-            set(GPUSOLVER_SELECTED_BACKEND "CPU")
-
+            set(GPUSOLVER_SELECTED_GPU_BACKEND "NONE")
         endif()
-
     endif()
 
 else()
 
-    set(
-        GPUSOLVER_SELECTED_BACKEND
-        "${GPUSOLVER_BACKEND}"
-    )
+    set(GPUSOLVER_SELECTED_GPU_BACKEND "${GPUSOLVER_BACKEND}")
 
 endif()
 
-message(
-    STATUS
-    "gpuSolver backend: ${GPUSOLVER_SELECTED_BACKEND}"
-)
+message(STATUS "gpuSolver GPU backend: ${GPUSOLVER_SELECTED_GPU_BACKEND}")
 
-# ------------------------------------------------------------
-# Backend implementation
-# ------------------------------------------------------------
+# CPU backend: always built.
+include(CPUBackend)
 
-if(GPUSOLVER_SELECTED_BACKEND STREQUAL "METAL")
+# GPU backend: built in addition, if selected/available.
+set(GPUSOLVER_GPU_BACKEND_TARGET "")
+
+if(GPUSOLVER_SELECTED_GPU_BACKEND STREQUAL "METAL")
 
     include(MetalBackend)
 
-elseif(GPUSOLVER_SELECTED_BACKEND STREQUAL "CUDA")
+elseif(GPUSOLVER_SELECTED_GPU_BACKEND STREQUAL "CUDA")
 
     include(CudaBackend)
 
-elseif(GPUSOLVER_SELECTED_BACKEND STREQUAL "CPU")
+elseif(GPUSOLVER_SELECTED_GPU_BACKEND STREQUAL "NONE")
 
-    include(CpuBackend)
+    # CPU-only build -- fine, nothing further to do.
 
 else()
 
     message(
         FATAL_ERROR
-        "Unknown GPUSOLVER_BACKEND='${GPUSOLVER_SELECTED_BACKEND}'"
+        "Unknown GPUSOLVER_BACKEND='${GPUSOLVER_SELECTED_GPU_BACKEND}'"
     )
 
 endif()
@@ -227,7 +217,8 @@ target_link_libraries(
     gpuSolver
     INTERFACE
         gpuSolverCore
-        ${GPUSOLVER_BACKEND_TARGET}
+        gpuSolverCPU
+        ${GPUSOLVER_GPU_BACKEND_TARGET}
 )
 
 add_library(

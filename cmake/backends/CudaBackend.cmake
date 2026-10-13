@@ -63,3 +63,7 @@ set_target_properties(
         FOLDER backend
 )
 
+set(
+    GPUSOLVER_GPU_BACKEND_TARGET
+    gpuSolverCuda
+)
