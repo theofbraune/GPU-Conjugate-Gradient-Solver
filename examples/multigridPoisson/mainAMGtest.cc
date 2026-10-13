@@ -9,10 +9,24 @@
 #include <GPUSolver/Preconditioners/MultigridDampedJacobiPreconditioner.h>
 #include <GPUSolver/Preconditioners/MultigridGaussSeidelPreconditioner.h>
 #include <GPUSolver/Preconditioners/SymmetricGaussSeidelPreconditioner.h>
-
 #include <GPUSolver/ReorderingStrategies/RCMReordering.h>
-#include <GPUSolver/metal/MetalBackend.h>
-#include <GPUSolver/metal/MetalContext.h>
+#include <GPUSolver/Backend.h>
+#include <GPUSolver/BackendEncoder.h>
+
+#if defined(GPUSOLVER_USE_METAL)
+
+    #include <GPUSolver/metal/MetalBackend.h>
+    #include <GPUSolver/metal/MetalContext.h>
+
+#elif defined(GPUSOLVER_USE_CUDA)
+
+    #include <GPUSolver/cuda/CudaBackend.h>
+
+#else
+
+    #error "No GPU backend selected"
+
+#endif
 
 #include <igl/cotmatrix.h>
 #include <igl/grad.h>
@@ -285,10 +299,19 @@ int main(int argc, char **argv) {
   // Set up Metal backend.
   // --------------------------------------------------------
 
-  gpuSolver::MetalContext context;
+  gpuSolver::Backend* backend;
+#if defined(GPUSOLVER_USE_METAL)
 
-  gpuSolver::MetalBackend backend(context);
-  // gpuSolver::CUDABackend backend(context);
+    gpuSolver::MetalContext metalContext;
+
+    backend = new gpuSolver::MetalBackend(metalContext);
+
+#elif defined(GPUSOLVER_USE_CUDA)
+
+    // backend = std::make_unique<gpuSolver::CudaBackend>();
+    backend = new gpuSolver::CudaBackend();
+
+#endif
 
   // --------------------------------------------------------
   // Jacobi preconditioner.
@@ -320,7 +343,7 @@ int main(int argc, char **argv) {
 
   gpuSolver::DampedJacobiPreconditioner preconditioner(4, 0.9f);
 
-  gpuSolver::CGSolver solver(backend, preconditioner, A, permutation);
+  gpuSolver::CGSolver solver(*backend, preconditioner, A, permutation);
   solver.setMaxIterations(2000);
   solver.setTolerance(residualTolerance);
 
@@ -461,9 +484,9 @@ int main(int argc, char **argv) {
   const Clock::time_point mgJacobiSetupStart = Clock::now();
 
   gpuSolver::MultigridDampedJacobiPreconditioner prec(
-      backend, hierarchyForA, mgPermutations, 2, 2, 1, 0.7f);
+      *backend, hierarchyForA, mgPermutations, 2, 2, 1, 0.7f);
 
-  gpuSolver::CGSolver solverMG(backend, prec, A, mgPermutations[0]);
+  gpuSolver::CGSolver solverMG(*backend, prec, A, mgPermutations[0]);
 
   const double mgJacobiSetupTime = elapsedMs(mgJacobiSetupStart, Clock::now());
 
@@ -563,7 +586,7 @@ int main(int argc, char **argv) {
 
   gpuSolver::SymmetricGaussSeidelPreconditioner gsPreconditioner(1.0f);
 
-  gpuSolver::CGSolver solverGS(backend, gsPreconditioner, A, permutation);
+  gpuSolver::CGSolver solverGS(*backend, gsPreconditioner, A, permutation);
 
   const double gsSetupTime = elapsedMs(gsSetupStart, Clock::now());
 
@@ -674,9 +697,9 @@ int main(int argc, char **argv) {
   const Clock::time_point mgGSSetupStart = Clock::now();
 
   gpuSolver::MultigridGaussSeidelPreconditioner mgGSPreconditioner(
-      backend, hierarchyForA, mgPermutations, 1, 1, 1, 1.0f);
+      *backend, hierarchyForA, mgPermutations, 1, 1, 1, 1.0f);
 
-  gpuSolver::CGSolver solverMGGS(backend, mgGSPreconditioner, A,
+  gpuSolver::CGSolver solverMGGS(*backend, mgGSPreconditioner, A,
                                  mgPermutations[0]);
 
   const double mgGSSetupTime = elapsedMs(mgGSSetupStart, Clock::now());
@@ -939,6 +962,7 @@ int main(int argc, char **argv) {
 
   polyscope::show();
 
+  delete backend;
   delete[] diagonalValues;
   return 0;
 }

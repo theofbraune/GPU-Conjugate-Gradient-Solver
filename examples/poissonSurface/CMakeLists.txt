@@ -16,6 +16,31 @@ target_link_libraries(poissonSurface
         glog::glog
 )
 
+if(GPUSOLVER_SELECTED_BACKEND STREQUAL "METAL")
+  target_link_libraries(
+    poissonSurface
+    PRIVATE 
+    gpuSolverMetal
+  )
+  target_compile_definitions(
+        poissonSurface
+        PRIVATE
+            GPUSOLVER_USE_METAL
+  )
+
+elseif(GPUSOLVER_SELECTED_BACKEND STREQUAL "CUDA")
+  target_link_libraries(
+    poissonSurface
+    PRIVATE 
+    gpuSolverCuda
+  )
+  target_compile_definitions(
+        poissonSurface
+        PRIVATE
+            GPUSOLVER_USE_CUDA
+  )
+endif()
+
 target_compile_definitions(poissonSurface
     PRIVATE
         PROJECT_SOURCE_DIR="${PROJECT_SOURCE_DIR}"

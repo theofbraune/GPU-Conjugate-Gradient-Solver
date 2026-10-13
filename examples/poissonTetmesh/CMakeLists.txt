@@ -11,11 +11,27 @@ add_executable(poissonTetmesh
 
 target_link_libraries(poissonTetmesh
     PRIVATE
-        gpuSolver::gpuSolver
         igl::core
         polyscope::polyscope
         glog::glog
 )
+
+if(GPUSOLVER_SELECTED_BACKEND STREQUAL "METAL")
+  target_link_libraries(
+    poissonTetmesh
+    PRIVATE 
+    gpuSolverMetal
+  )
+endif()
+
+if(GPUSOLVER_SELECTED_BACKEND STREQUAL "CUDA")
+  target_link_libraries(
+    poissonTetmesh
+    PRIVATE 
+    gpuSolverCuda
+  )
+endif()
+
 target_compile_definitions(poissonTetmesh
     PRIVATE
         PROJECT_SOURCE_DIR="${PROJECT_SOURCE_DIR}"

@@ -249,8 +249,10 @@ endif()
 
 if(GPUSOLVER_BUILD_TESTS)
 
-    include(CTest)
+  enable_testing()
 
-    add_subdirectory(tests)
+  include(CTest)
+
+  add_subdirectory(tests)
 
 endif()

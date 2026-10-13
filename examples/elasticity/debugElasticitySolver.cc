@@ -1,30 +1,3 @@
-// Purpose:
-//   Debug the elasticity solver stack in the simplest possible order.
-//
-//   1. Build the constrained linear-elasticity system K u = f.
-//   2. Compute an Eigen Cholesky reference solution.
-//   3. Apply a SINGLE-LEVEL preconditioner once, outside CG,
-//      and inspect ||b - A z|| / ||b||.
-//   4. Run CG with that preconditioner, WITHOUT any permutation.
-//   5. Build the AMG hierarchy.
-//   6. Construct/apply the MG preconditioner once and inspect the residual.
-//   7. Run CG with the MG preconditioner, still WITHOUT any permutation.
-//
-// IMPORTANT:
-//   This file is a correctness/debug harness, not a benchmark.
-//   Keep the mesh modest and print lots of diagnostics.
-//
-//   Two API names may need tiny adaptation to your current tree:
-//     - MGBuilder::buildAmgcl...ElasticityHierarchy(...)
-//     - the exact constructors of the MG preconditioners.
-//   Everything else follows the solver interfaces used in the project.
-//
-// Suggested first run:
-//   - enable scalar symmetric GS only
-//   - then block Jacobi only
-//   - then MG + block Jacobi
-//
-// Do NOT add RCM/permutations until this file is clean.
 
 #include "ElasticitySimulator.h"
 #include "GPUSolver/Permutation.h"
@@ -54,8 +27,25 @@
 #include <GPUSolver/AMGHierarchy.h>
 #include <GPUSolver/ReorderingStrategies/IdentityReordering.h>
 #include <GPUSolver/ReorderingStrategies/RCMReordering.h>
-#include <GPUSolver/metal/MetalBackend.h>
-#include <GPUSolver/metal/MetalContext.h>
+
+
+#include <GPUSolver/Backend.h>
+#include <GPUSolver/BackendEncoder.h>
+
+#if defined(GPUSOLVER_USE_METAL)
+
+    #include <GPUSolver/metal/MetalBackend.h>
+    #include <GPUSolver/metal/MetalContext.h>
+
+#elif defined(GPUSOLVER_USE_CUDA)
+
+    #include <GPUSolver/cuda/CudaBackend.h>
+
+#else
+
+    #error "No GPU backend selected"
+
+#endif
 
 // Adapt include to your current AMG helper path.
 #include "AMGUtils/AMGHierarchyBuilder.h"
@@ -1399,9 +1389,20 @@ int main(int argc, char **argv) {
     google::InitGoogleLogging(argv[0]);
     const ElasticityProblem problem = buildProblem(argv[1]);
 
-    gpuSolver::MetalContext context;
-    gpuSolver::MetalBackend backend(context);
 
+    gpuSolver::Backend* backend;
+#if defined(GPUSOLVER_USE_METAL)
+
+    gpuSolver::MetalContext metalContext;
+
+    backend = new gpuSolver::MetalBackend(metalContext);
+
+#elif defined(GPUSOLVER_USE_CUDA)
+
+    // backend = std::make_unique<gpuSolver::CudaBackend>();
+    backend = new gpuSolver::CudaBackend();
+
+#endif
     // =========================================================================
     // STAGE 1:
     // Test ONE single-level preconditioner application.
@@ -1517,21 +1518,21 @@ int main(int argc, char **argv) {
 
     {
       gpuSolver::MultigridBlockJacobiPreconditioner mgBlockJacobi(
-          backend, hierarchy, permutationsLevel,
+          *backend, hierarchy, permutationsLevel,
           2,     // pre smoothing steps
           2,     // post smoothing steps
           4,     // coarse smoothing steps
           0.7f); // omega
 
       gpuSolver::MultigridDampedJacobiPreconditioner mgJacobi(
-          backend, hierarchy, permutationsLevel,
+          *backend, hierarchy, permutationsLevel,
           1,     // pre smoothing steps
           1,     // post smoothing steps
           1,     // coarse smoothing steps
           0.7f); // omega
 
       gpuSolver::MultigridBlockGaussSeidelPreconditioner mgBlockGS(
-          backend, hierarchy, permutationsLevel,
+          *backend, hierarchy, permutationsLevel,
           1,     // pre smoothing
           1,     // post smoothing
           1,     // coarse smoothing
@@ -1542,19 +1543,19 @@ int main(int argc, char **argv) {
       LOG(INFO) << " do the CG test with the proper preconditioner! ";
 
       LOG(INFO) << " start CG";
-      testCG("mg 3x3 block jacobi", backend, mgBlockJacobi, problem.A,
+      testCG("mg 3x3 block jacobi", *backend, mgBlockJacobi, problem.A,
              problem.b, problem.reference, 5000);
       LOG(INFO) << " endCG";
       LOG(INFO) << "--------------------------------";
 
       LOG(INFO) << " start CG";
-      testCG("mg jacobi", backend, mgJacobi, problem.A, problem.b,
+      testCG("mg jacobi", *backend, mgJacobi, problem.A, problem.b,
              problem.reference, 1000);
       LOG(INFO) << " endCG";
       LOG(INFO) << "--------------------------------";
 
       LOG(INFO) << " start CG";
-      testCG("mg 3x3 block gauss seidel - identity", backend, mgBlockGS,
+      testCG("mg 3x3 block gauss seidel - identity", *backend, mgBlockGS,
              problem.A, problem.b, problem.reference, 1000);
       LOG(INFO) << " end CG";
       LOG(INFO) << "--------------------------------";
@@ -1563,9 +1564,9 @@ int main(int argc, char **argv) {
           buildBlockRCMPermutationsForHierarchy(hierarchy);
 
       gpuSolver::MultigridBlockGaussSeidelPreconditioner mgBlockGSRCM(
-          backend, hierarchy, blockRCM, 2, 2, 1, 1.0f);
+          *backend, hierarchy, blockRCM, 2, 2, 1, 1.0f);
 
-      testCGWithPermutation("mg 3x3 block GS - block RCM", backend,
+      testCGWithPermutation("mg 3x3 block GS - block RCM", *backend,
                             mgBlockGSRCM, problem.A, problem.b,
                             problem.reference, blockRCM[0], 1000);
       LOG(INFO) << " end CG";

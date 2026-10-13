@@ -23,15 +23,25 @@
 #include <GPUSolver/Preconditioners/MultigridGaussSeidelPreconditioner.h>
 #include <GPUSolver/Preconditioners/MultigridHybridBlockPreconditioner.h>
 
-// Adapt these two names to whatever you choose.
-// #include
-// <GPUSolver/Preconditioners/MultigridBlockGaussSeidelPreconditioner.h>
-// #include <GPUSolver/Preconditioners/MultigridBlockJacobiPreconditioner.h>
-
 #include <GPUSolver/ReorderingStrategies/RCMReordering.h>
 
-#include <GPUSolver/metal/MetalBackend.h>
-#include <GPUSolver/metal/MetalContext.h>
+#include <GPUSolver/Backend.h>
+#include <GPUSolver/BackendEncoder.h>
+
+#if defined(GPUSOLVER_USE_METAL)
+
+    #include <GPUSolver/metal/MetalBackend.h>
+    #include <GPUSolver/metal/MetalContext.h>
+
+#elif defined(GPUSOLVER_USE_CUDA)
+
+    #include <GPUSolver/cuda/CudaBackend.h>
+
+#else
+
+    #error "No GPU backend selected"
+
+#endif
 
 #include <igl/readMESH.h>
 
@@ -367,9 +377,19 @@ int main(int argc, char **argv) {
   gpuSolver::Permutation dofPermutation = gpuSolver::expandBlockPermutation(
       nodePermutation, numberOfBlocks, blockSize);
 
-  gpuSolver::MetalContext context;
+    gpuSolver::Backend* backend;
+#if defined(GPUSOLVER_USE_METAL)
 
-  gpuSolver::MetalBackend backend(context);
+    gpuSolver::MetalContext metalContext;
+
+    backend = new gpuSolver::MetalBackend(metalContext);
+
+#elif defined(GPUSOLVER_USE_CUDA)
+
+    // backend = std::make_unique<gpuSolver::CudaBackend>();
+    backend = new gpuSolver::CudaBackend();
+
+#endif
 
   constexpr float tolerance = 1.0e-4f;
 
@@ -397,7 +417,7 @@ int main(int argc, char **argv) {
 
     gpuSolver::DampedJacobiPreconditioner preconditioner(4, 0.9f);
 
-    gpuSolver::CGSolver solver(backend, preconditioner, A, dofPermutation);
+    gpuSolver::CGSolver solver(*backend, preconditioner, A, dofPermutation);
 
     solver.setTolerance(tolerance);
 
@@ -415,7 +435,7 @@ int main(int argc, char **argv) {
 
     gpuSolver::SymmetricGaussSeidelPreconditioner preconditioner(1.0f);
 
-    gpuSolver::CGSolver solver(backend, preconditioner, A, dofPermutation);
+    gpuSolver::CGSolver solver(*backend, preconditioner, A, dofPermutation);
 
     solver.setTolerance(tolerance);
 
@@ -436,7 +456,7 @@ int main(int argc, char **argv) {
 
     gpuSolver::BlockJacobiPreconditioner preconditioner(4, 0.9f);
 
-    gpuSolver::CGSolver solver(backend, preconditioner, A, idPerm[0]);
+    gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
 
     solver.setTolerance(tolerance);
 
@@ -447,7 +467,7 @@ int main(int argc, char **argv) {
     blockJacobi = runBenchmark("3x3 block Jacobi", solver, A, b, setupMs);
   }
 
-  /**/
+  /*
   BenchmarkResult blockGS;
 
   {
@@ -455,7 +475,7 @@ int main(int argc, char **argv) {
 
     gpuSolver::BlockGaussSeidelPreconditioner preconditioner(1.0f);
 
-    gpuSolver::CGSolver solver(backend, preconditioner, A, idPerm[0]);
+    gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
 
     solver.setTolerance(tolerance);
 
@@ -466,7 +486,7 @@ int main(int argc, char **argv) {
     blockGS = runBenchmark("3x3 block symmetric GS", solver, A, b, setupMs);
   }
 
-  /**/
+  */
 
   const Clock::time_point hierarchyStart = Clock::now();
 
@@ -478,9 +498,9 @@ int main(int argc, char **argv) {
     const Clock::time_point start = Clock::now();
 
     gpuSolver::MultigridDampedJacobiPreconditioner preconditioner(
-        backend, hierarchy, idPerm, 2, 2, 1, 0.7f);
+        *backend, hierarchy, idPerm, 2, 2, 1, 0.7f);
 
-    gpuSolver::CGSolver solver(backend, preconditioner, A, idPerm[0]);
+    gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
 
     solver.setTolerance(tolerance);
     solver.setMaxIterations(maxIterations);
@@ -497,11 +517,11 @@ int main(int argc, char **argv) {
     const Clock::time_point start = Clock::now();
 
     gpuSolver::MultigridBlockJacobiPreconditioner preconditioner(
-        backend, hierarchy, mgPermutations, 2, 2, 4, 0.4f, 1);
+        *backend, hierarchy, mgPermutations, 2, 2, 4, 0.4f, 1);
     // gpuSolver::MultigridBlockJacobiPreconditioner preconditioner(
     //     backend, hierarchy, mgPermutations, 2, 2, 1, 0.7f);
 
-    gpuSolver::CGSolver solver(backend, preconditioner, A, mgPermutations[0]);
+    gpuSolver::CGSolver solver(*backend, preconditioner, A, mgPermutations[0]);
 
     solver.setTolerance(tolerance);
     solver.setMaxIterations(maxIterations);
@@ -511,7 +531,7 @@ int main(int argc, char **argv) {
     mgBlockJacobi =
         runBenchmark("MG + 3x3 block Jacobi", solver, A, b, setupMs);
   }
-  /**/
+  /*
 
   BenchmarkResult mgSGS;
 
@@ -519,9 +539,9 @@ int main(int argc, char **argv) {
     const Clock::time_point start = Clock::now();
 
     gpuSolver::MultigridGaussSeidelPreconditioner preconditioner(
-        backend, hierarchy, idPerm, 1, 1, 0, 0.7f);
+        *backend, hierarchy, idPerm, 1, 1, 0, 0.7f);
 
-    gpuSolver::CGSolver solver(backend, preconditioner, A, idPerm[0]);
+    gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
 
     solver.setTolerance(tolerance);
     solver.setMaxIterations(maxIterations);
@@ -531,15 +551,16 @@ int main(int argc, char **argv) {
     mgSGS = runBenchmark("MG + gauss seidel", solver, A, b, setupMs);
   }
 
+  
   BenchmarkResult mgBlockSGS;
 
   {
     const Clock::time_point start = Clock::now();
 
     gpuSolver::MultigridBlockGaussSeidelPreconditioner preconditioner(
-        backend, hierarchy, idPerm, 1, 1, 0, 0.7f);
+        *backend, hierarchy, idPerm, 1, 1, 0, 0.7f);
 
-    gpuSolver::CGSolver solver(backend, preconditioner, A, idPerm[0]);
+    gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
 
     solver.setTolerance(tolerance);
     solver.setMaxIterations(maxIterations);
@@ -554,9 +575,9 @@ int main(int argc, char **argv) {
     const Clock::time_point start = Clock::now();
 
     gpuSolver::MultigridHybridBlockPreconditioner preconditioner(
-        backend, hierarchy, idPerm, 2, 1, 0, 0.7f);
+        *backend, hierarchy, idPerm, 2, 1, 0, 0.7f);
 
-    gpuSolver::CGSolver solver(backend, preconditioner, A, idPerm[0]);
+    gpuSolver::CGSolver solver(*backend, preconditioner, A, idPerm[0]);
 
     solver.setTolerance(tolerance);
     solver.setMaxIterations(maxIterations);
@@ -565,6 +586,7 @@ int main(int argc, char **argv) {
 
     mgBlockHybrid = runBenchmark("MG + block gauss seidel fine + block jacobi coarse", solver, A, b, setupMs);
   }
+  */
 
   /*
   std::vector<BenchmarkResult> results = {
@@ -654,6 +676,8 @@ int main(int argc, char **argv) {
       ->setEnabled(true);
 
   polyscope::show();
+
+  delete backend;
 
   return 0;
 }
